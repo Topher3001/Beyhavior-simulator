@@ -33,11 +33,25 @@ export async function getStoredDesign(id: string): Promise<StoredDesign | undefi
   const database = await openDatabase();
 
   try {
-    const transaction = database.transaction(DESIGN_STORE_NAME, 'readonly');
+    const transaction = database.transaction(DESIGN_STORE_NAME, 'readwrite');
     const store = transaction.objectStore(DESIGN_STORE_NAME);
+    const done = transactionDone(transaction);
     const record = await requestToPromise<StoredDesignRecord | undefined>(store.get(id));
 
-    return record ? ensureStoredDesign(record) : undefined;
+    if (!record) {
+      await done;
+      return undefined;
+    }
+
+    const storedDesign = ensureStoredDesign(record);
+
+    if (!record.physicsProfile) {
+      await requestToPromise(store.put(storedDesign));
+    }
+
+    await done;
+
+    return storedDesign;
   } finally {
     database.close();
   }
@@ -179,7 +193,7 @@ function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
 
-    request.addEventListener('upgradeneeded', () => {
+    request.addEventListener('upgradeneeded', (event) => {
       const database = request.result;
       const store = database.objectStoreNames.contains(DESIGN_STORE_NAME)
         ? request.transaction?.objectStore(DESIGN_STORE_NAME)
@@ -189,7 +203,7 @@ function openDatabase(): Promise<IDBDatabase> {
         store.createIndex(UPDATED_AT_INDEX_NAME, 'updatedAt');
       }
 
-      if (store && request.oldVersion < 2) {
+      if (store && event.oldVersion < 2) {
         backfillPhysicsProfiles(store);
       }
     });

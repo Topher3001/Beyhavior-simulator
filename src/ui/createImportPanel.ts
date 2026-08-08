@@ -1,4 +1,12 @@
-import type { LoadedDesign, StoredDesign, StoredDesignMetadata, UpAxis } from '../model/types';
+import { sanitizePhysicsProfile } from '../model/physicsProfile';
+import type {
+  LoadedDesign,
+  PhysicsProfile,
+  StoredDesign,
+  StoredDesignMetadata,
+  TipType,
+  UpAxis,
+} from '../model/types';
 import { loadDesignFile } from '../model/loadDesign';
 import { createSampleStlFile } from '../model/sampleStl';
 import type { SimulatorScene } from '../scene/createScene';
@@ -9,14 +17,17 @@ import {
   listStoredDesigns,
   renameStoredDesign,
   saveStoredDesign,
+  updatePhysicsProfile,
 } from '../storage/designLibrary';
 
 type StatusTone = 'idle' | 'loading' | 'success' | 'error';
+type DesignTab = 'import' | 'library' | 'physics';
 
 type ActiveDesignState = {
   design: LoadedDesign;
   fileBlob: Blob;
   storedId: string | null;
+  physicsProfile: PhysicsProfile | null;
 };
 
 export function createImportPanel(simulatorScene: SimulatorScene): void {
@@ -25,6 +36,8 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   let lastImportedFile: File | null = null;
   let savedDesigns: StoredDesignMetadata[] = [];
   let isBusy = false;
+
+  const canEditPhysics = () => Boolean(activeDesignState?.storedId && activeDesignState.physicsProfile);
 
   const setImportStatus = (message: string, tone: StatusTone) => {
     elements.importStatus.textContent = message;
@@ -36,13 +49,47 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     elements.libraryStatus.dataset.tone = tone;
   };
 
+  const setPhysicsStatus = (message: string, tone: StatusTone) => {
+    elements.physicsStatus.textContent = message;
+    elements.physicsStatus.dataset.tone = tone;
+  };
+
+  const updatePhysicsSaveButton = () => {
+    elements.savePhysicsButton.disabled = isBusy || !canEditPhysics() || elements.physicsSaveState.dataset.tone !== 'unsaved';
+  };
+
+  const setPhysicsDirtyState = (dirty: boolean) => {
+    elements.physicsSaveState.textContent = dirty ? 'Unsaved changes' : 'Saved';
+    elements.physicsSaveState.dataset.tone = dirty ? 'unsaved' : 'saved';
+    updatePhysicsSaveButton();
+  };
+
+  const setPhysicsUnavailable = (message: string) => {
+    elements.physicsTabButton.disabled = true;
+    elements.physicsProfileForm.hidden = true;
+    setPhysicsStatus(message, 'idle');
+    setPhysicsDirtyState(false);
+
+    if (!elements.physicsPane.hidden) {
+      switchTab('import');
+    }
+  };
+
+  const setPhysicsFormDisabled = (disabled: boolean) => {
+    elements.physicsProfileForm.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach((control) => {
+      control.disabled = disabled;
+    });
+  };
+
   const setBusy = (busy: boolean) => {
     isBusy = busy;
     elements.fileInput.disabled = busy;
     elements.sampleButton.disabled = busy;
     elements.resetButton.disabled = busy;
     elements.upAxisSelect.disabled = busy;
-    elements.saveButton.disabled = busy || !activeDesignState || Boolean(activeDesignState.storedId);
+    elements.saveButton.disabled = busy || !activeDesignState || Boolean(activeDesignState.storedId) || elements.saveNameInput.value.trim().length === 0;
+    setPhysicsFormDisabled(busy || !canEditPhysics());
+    updatePhysicsSaveButton();
     elements.libraryList.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
       button.disabled = busy;
     });
@@ -51,12 +98,30 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     });
   };
 
-  const switchTab = (tab: 'import' | 'library') => {
-    const isImportTab = tab === 'import';
-    elements.importTabButton.setAttribute('aria-selected', String(isImportTab));
-    elements.libraryTabButton.setAttribute('aria-selected', String(!isImportTab));
-    elements.importPane.hidden = !isImportTab;
-    elements.libraryPane.hidden = isImportTab;
+  const switchTab = (tab: DesignTab) => {
+    if (tab === 'physics' && elements.physicsTabButton.disabled) {
+      return;
+    }
+
+    elements.importTabButton.setAttribute('aria-selected', String(tab === 'import'));
+    elements.libraryTabButton.setAttribute('aria-selected', String(tab === 'library'));
+    elements.physicsTabButton.setAttribute('aria-selected', String(tab === 'physics'));
+    elements.importPane.hidden = tab !== 'import';
+    elements.libraryPane.hidden = tab !== 'library';
+    elements.physicsPane.hidden = tab !== 'physics';
+  };
+
+  const renderActivePhysicsProfile = (profile: PhysicsProfile) => {
+    elements.physicsTabButton.disabled = false;
+    elements.physicsProfileForm.hidden = false;
+    renderPhysicsProfile(profile, elements);
+    setPhysicsStatus('Physics profile ready.', 'idle');
+    setPhysicsDirtyState(false);
+    setPhysicsFormDisabled(isBusy);
+
+    if (activeDesignState) {
+      simulatorScene.setCenterOfMassMarker(profile.centerOfMassOffsetMm, activeDesignState.design);
+    }
   };
 
   const refreshLibrary = async () => {
@@ -85,6 +150,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     try {
       const design = await loadDesignFile(file, upAxis);
       simulatorScene.setImportedDesign(design);
+      simulatorScene.clearCenterOfMassMarker();
       await waitForFrame();
       design.thumbnailDataUrl = simulatorScene.captureThumbnail();
 
@@ -92,6 +158,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
         design,
         fileBlob: file,
         storedId: null,
+        physicsProfile: null,
       };
       lastImportedFile = file;
 
@@ -99,6 +166,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       renderSaveControls(design, elements, null);
       elements.activeModelLabel.textContent = design.fileName;
       elements.resetButton.hidden = false;
+      setPhysicsUnavailable('Save this design before editing physics.');
       setImportStatus('Imported visual model. Unsaved.', 'success');
       renderLibrary(savedDesigns, elements, null);
     } catch (error) {
@@ -127,10 +195,12 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       activeDesignState = {
         ...activeDesignState,
         storedId: metadata.id,
+        physicsProfile: metadata.physicsProfile,
       };
 
       elements.activeModelLabel.textContent = metadata.displayName;
       renderSaveControls(activeDesignState.design, elements, metadata);
+      renderActivePhysicsProfile(metadata.physicsProfile);
       setImportStatus('Saved to local design library.', 'success');
       await refreshLibrary();
     } catch (error) {
@@ -167,6 +237,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
         design: loadedDesign,
         fileBlob: storedDesign.fileBlob,
         storedId: storedDesign.id,
+        physicsProfile: storedDesign.physicsProfile,
       };
       lastImportedFile = null;
 
@@ -175,6 +246,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       elements.resetButton.hidden = false;
       renderStoredDesignDetails(storedDesign, elements);
       renderSaveControls(loadedDesign, elements, storedDesign);
+      renderActivePhysicsProfile(storedDesign.physicsProfile);
       setLibraryStatus('Loaded saved design.', 'success');
       setImportStatus('Loaded saved design from library.', 'success');
       renderLibrary(savedDesigns, elements, storedDesign.id);
@@ -200,6 +272,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       if (activeDesignState?.storedId === metadata.id) {
         elements.activeModelLabel.textContent = metadata.displayName;
         elements.saveNameInput.value = metadata.displayName;
+        activeDesignState.physicsProfile = metadata.physicsProfile;
       }
 
       await refreshLibrary();
@@ -242,8 +315,57 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     }
   };
 
+  const savePhysicsProfile = async () => {
+    if (!activeDesignState?.storedId || !activeDesignState.physicsProfile || isBusy) {
+      return;
+    }
+
+    let profile: PhysicsProfile;
+
+    try {
+      profile = readPhysicsProfileFromForm(elements, activeDesignState.physicsProfile.updatedAt);
+    } catch (error) {
+      setPhysicsStatus(getErrorMessage(error, 'Check the profile values.'), 'error');
+      return;
+    }
+
+    setBusy(true);
+    setPhysicsStatus('Saving physics profile...', 'loading');
+
+    try {
+      const metadata = await updatePhysicsProfile(activeDesignState.storedId, profile);
+      activeDesignState.physicsProfile = metadata.physicsProfile;
+      renderActivePhysicsProfile(metadata.physicsProfile);
+      setPhysicsStatus('Physics profile saved.', 'success');
+      await refreshLibrary();
+    } catch (error) {
+      setPhysicsStatus(getErrorMessage(error, 'Unable to save this physics profile.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePhysicsInput = () => {
+    if (!activeDesignState?.storedId || !activeDesignState.physicsProfile) {
+      return;
+    }
+
+    try {
+      const profile = readPhysicsProfileFromForm(elements, activeDesignState.physicsProfile.updatedAt);
+      simulatorScene.setCenterOfMassMarker(profile.centerOfMassOffsetMm, activeDesignState.design);
+      setPhysicsStatus('Physics profile ready.', 'idle');
+      setPhysicsDirtyState(!arePhysicsProfilesEquivalent(profile, activeDesignState.physicsProfile));
+    } catch (error) {
+      setPhysicsStatus(getErrorMessage(error, 'Check the profile values.'), 'error');
+      elements.physicsSaveState.textContent = 'Check values';
+      elements.physicsSaveState.dataset.tone = 'error';
+      updatePhysicsSaveButton();
+    }
+  };
+
   const resetToDemo = (message = 'Demo top restored.') => {
     simulatorScene.resetToDemoTop();
+    simulatorScene.clearCenterOfMassMarker();
     activeDesignState = null;
     lastImportedFile = null;
     elements.activeModelLabel.textContent = 'Demo Top';
@@ -251,6 +373,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     elements.thumbnail.removeAttribute('src');
     elements.resetButton.hidden = true;
     elements.saveControls.hidden = true;
+    setPhysicsUnavailable('Load or save a design.');
     setImportStatus(message, 'idle');
     renderLibrary(savedDesigns, elements, null);
   };
@@ -260,6 +383,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     switchTab('library');
     void refreshLibrary();
   });
+  elements.physicsTabButton.addEventListener('click', () => switchTab('physics'));
 
   elements.fileInput.addEventListener('change', () => {
     const file = elements.fileInput.files?.item(0);
@@ -286,6 +410,13 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       void importFile(lastImportedFile);
     }
   });
+
+  elements.physicsProfileForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+  });
+  elements.physicsProfileForm.addEventListener('input', handlePhysicsInput);
+  elements.physicsProfileForm.addEventListener('change', handlePhysicsInput);
+  elements.savePhysicsButton.addEventListener('click', () => void savePhysicsProfile());
 
   elements.libraryList.addEventListener('click', (event) => {
     const target = event.target;
@@ -337,6 +468,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     }
   });
 
+  setPhysicsUnavailable('Load or save a design.');
   void refreshLibrary();
 }
 
@@ -344,20 +476,41 @@ function getPanelElements() {
   return {
     importTabButton: queryRequired<HTMLButtonElement>('#import-tab-button'),
     libraryTabButton: queryRequired<HTMLButtonElement>('#library-tab-button'),
+    physicsTabButton: queryRequired<HTMLButtonElement>('#physics-tab-button'),
     importPane: queryRequired<HTMLElement>('#import-pane'),
     libraryPane: queryRequired<HTMLElement>('#library-pane'),
+    physicsPane: queryRequired<HTMLElement>('#physics-pane'),
     fileInput: queryRequired<HTMLInputElement>('#design-file-input'),
     sampleButton: queryRequired<HTMLButtonElement>('#load-sample-button'),
     resetButton: queryRequired<HTMLButtonElement>('#reset-demo-button'),
     upAxisSelect: queryRequired<HTMLSelectElement>('#up-axis'),
     importStatus: queryRequired<HTMLElement>('#import-status'),
     libraryStatus: queryRequired<HTMLElement>('#library-status'),
+    physicsStatus: queryRequired<HTMLElement>('#physics-status'),
     libraryList: queryRequired<HTMLElement>('#library-list'),
     libraryEmptyState: queryRequired<HTMLElement>('#library-empty-state'),
     saveControls: queryRequired<HTMLElement>('#save-controls'),
     saveNameInput: queryRequired<HTMLInputElement>('#save-name-input'),
     saveButton: queryRequired<HTMLButtonElement>('#save-design-button'),
     savedStateLabel: queryRequired<HTMLElement>('#saved-state-label'),
+    physicsProfileForm: queryRequired<HTMLFormElement>('#physics-profile-form'),
+    savePhysicsButton: queryRequired<HTMLButtonElement>('#save-physics-button'),
+    physicsSaveState: queryRequired<HTMLElement>('#physics-save-state'),
+    physicsWeight: queryRequired<HTMLInputElement>('#physics-weight'),
+    physicsRadius: queryRequired<HTMLInputElement>('#physics-radius'),
+    physicsHeight: queryRequired<HTMLInputElement>('#physics-height'),
+    physicsComX: queryRequired<HTMLInputElement>('#physics-com-x'),
+    physicsComY: queryRequired<HTMLInputElement>('#physics-com-y'),
+    physicsComZ: queryRequired<HTMLInputElement>('#physics-com-z'),
+    physicsTipType: queryRequired<HTMLSelectElement>('#physics-tip-type'),
+    physicsTipFriction: queryRequired<HTMLInputElement>('#physics-tip-friction'),
+    physicsRingFriction: queryRequired<HTMLInputElement>('#physics-ring-friction'),
+    physicsAirDrag: queryRequired<HTMLInputElement>('#physics-air-drag'),
+    physicsSpinDamping: queryRequired<HTMLInputElement>('#physics-spin-damping'),
+    physicsLaunchRpm: queryRequired<HTMLInputElement>('#physics-launch-rpm'),
+    physicsLaunchAngle: queryRequired<HTMLInputElement>('#physics-launch-angle'),
+    physicsLaunchX: queryRequired<HTMLInputElement>('#physics-launch-x'),
+    physicsLaunchZ: queryRequired<HTMLInputElement>('#physics-launch-z'),
     designDetails: queryRequired<HTMLElement>('#design-details'),
     thumbnail: queryRequired<HTMLImageElement>('#design-thumbnail'),
     activeModelLabel: queryRequired<HTMLElement>('#active-model-label'),
@@ -476,6 +629,73 @@ function renderSaveControls(
   elements.savedStateLabel.dataset.tone = 'unsaved';
 }
 
+function renderPhysicsProfile(profile: PhysicsProfile, elements: ReturnType<typeof getPanelElements>): void {
+  elements.physicsWeight.value = formatInputNumber(profile.weightGrams);
+  elements.physicsRadius.value = formatInputNumber(profile.radiusMm);
+  elements.physicsHeight.value = formatInputNumber(profile.heightMm);
+  elements.physicsComX.value = formatInputNumber(profile.centerOfMassOffsetMm.x);
+  elements.physicsComY.value = formatInputNumber(profile.centerOfMassOffsetMm.y);
+  elements.physicsComZ.value = formatInputNumber(profile.centerOfMassOffsetMm.z);
+  elements.physicsTipType.value = profile.tipType;
+  elements.physicsTipFriction.value = formatInputNumber(profile.tipFrictionCoefficient);
+  elements.physicsRingFriction.value = formatInputNumber(profile.ringFrictionCoefficient);
+  elements.physicsAirDrag.value = formatInputNumber(profile.airDragCoefficient);
+  elements.physicsSpinDamping.value = formatInputNumber(profile.spinDampingCoefficient);
+  elements.physicsLaunchRpm.value = formatInputNumber(profile.defaultLaunchRpm);
+  elements.physicsLaunchAngle.value = formatInputNumber(profile.defaultLaunchAngleDegrees);
+  elements.physicsLaunchX.value = formatInputNumber(profile.defaultLaunchPosition.x);
+  elements.physicsLaunchZ.value = formatInputNumber(profile.defaultLaunchPosition.z);
+}
+
+function readPhysicsProfileFromForm(
+  elements: ReturnType<typeof getPanelElements>,
+  updatedAt: string,
+): PhysicsProfile {
+  return sanitizePhysicsProfile({
+    weightGrams: readNumber(elements.physicsWeight),
+    radiusMm: readNumber(elements.physicsRadius),
+    heightMm: readNumber(elements.physicsHeight),
+    centerOfMassOffsetMm: {
+      x: readNumber(elements.physicsComX),
+      y: readNumber(elements.physicsComY),
+      z: readNumber(elements.physicsComZ),
+    },
+    tipType: elements.physicsTipType.value as TipType,
+    tipFrictionCoefficient: readNumber(elements.physicsTipFriction),
+    ringFrictionCoefficient: readNumber(elements.physicsRingFriction),
+    airDragCoefficient: readNumber(elements.physicsAirDrag),
+    spinDampingCoefficient: readNumber(elements.physicsSpinDamping),
+    defaultLaunchRpm: readNumber(elements.physicsLaunchRpm),
+    defaultLaunchAngleDegrees: readNumber(elements.physicsLaunchAngle),
+    defaultLaunchPosition: {
+      x: readNumber(elements.physicsLaunchX),
+      z: readNumber(elements.physicsLaunchZ),
+    },
+    updatedAt,
+  });
+}
+
+function arePhysicsProfilesEquivalent(first: PhysicsProfile, second: PhysicsProfile): boolean {
+  return JSON.stringify(getComparablePhysicsProfile(first)) === JSON.stringify(getComparablePhysicsProfile(second));
+}
+
+function getComparablePhysicsProfile(profile: PhysicsProfile) {
+  return {
+    weightGrams: profile.weightGrams,
+    radiusMm: profile.radiusMm,
+    heightMm: profile.heightMm,
+    centerOfMassOffsetMm: profile.centerOfMassOffsetMm,
+    tipType: profile.tipType,
+    tipFrictionCoefficient: profile.tipFrictionCoefficient,
+    ringFrictionCoefficient: profile.ringFrictionCoefficient,
+    airDragCoefficient: profile.airDragCoefficient,
+    spinDampingCoefficient: profile.spinDampingCoefficient,
+    defaultLaunchRpm: profile.defaultLaunchRpm,
+    defaultLaunchAngleDegrees: profile.defaultLaunchAngleDegrees,
+    defaultLaunchPosition: profile.defaultLaunchPosition,
+  };
+}
+
 function queryRequired<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
 
@@ -500,6 +720,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function readNumber(input: HTMLInputElement): number {
+  return Number(input.value);
+}
+
 function formatDimensions(dimensions: { x: number; y: number; z: number }): string {
   return `${formatNumber(dimensions.x)} x ${formatNumber(dimensions.y)} x ${formatNumber(dimensions.z)}`;
 }
@@ -514,6 +738,12 @@ function formatNumber(value: number): string {
   }
 
   return value.toFixed(3);
+}
+
+function formatInputNumber(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
 function formatFileSize(bytes: number): string {

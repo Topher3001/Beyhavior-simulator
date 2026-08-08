@@ -75,7 +75,7 @@ body {
 
 .tab-list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 14px;
   padding: 4px;
@@ -100,6 +100,11 @@ body {
   background: #ffffff;
   color: #1f2a31;
   box-shadow: 0 8px 18px rgb(32 42 50 / 12%);
+}
+
+.tab-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .tab-pane {
@@ -191,6 +196,19 @@ input[type="text"] {
   color: #1f2a31;
   font: inherit;
   font-size: 0.86rem;
+  font-weight: 700;
+}
+
+input[type="number"] {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid #c5cdd3;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2a31;
+  font: inherit;
+  font-size: 0.84rem;
   font-weight: 700;
 }
 
@@ -301,6 +319,76 @@ input[type="text"] {
 
 .saved-state[data-tone="saved"] {
   color: #27734a;
+}
+
+.saved-state[data-tone="error"] {
+  color: #bb3340;
+}
+
+.physics-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.physics-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #d5dce1;
+}
+
+.physics-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.physics-section h3 {
+  margin: 0;
+  color: #303b43;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.physics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.physics-grid-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.physics-grid label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.physics-grid span {
+  grid-column: 1 / -1;
+  color: #303b43;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.physics-grid small {
+  color: #64717a;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.physics-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid #d5dce1;
 }
 
 .library-empty {
@@ -424,7 +512,7 @@ input[type="text"] {
     bottom: 12px;
     left: 12px;
     width: auto;
-    max-height: 45vh;
+    max-height: 52vh;
     padding: 13px 14px;
   }
 
@@ -446,6 +534,15 @@ input[type="text"] {
   }
 
   .library-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .physics-grid,
+  .physics-grid-three {
+    grid-template-columns: 1fr;
+  }
+
+  .physics-actions {
     grid-template-columns: 1fr;
   }
 }
