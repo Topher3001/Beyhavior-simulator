@@ -1,0 +1,278 @@
+:root {
+  color: #182026;
+  background: #eef1f3;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+.viewport-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+.status-panel {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: min(340px, calc(100vw - 40px));
+  padding: 16px 18px;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 8px;
+  background: rgb(246 248 249 / 82%);
+  box-shadow: 0 18px 48px rgb(32 42 50 / 16%);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.import-panel {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: min(380px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid rgb(255 255 255 / 72%);
+  border-radius: 8px;
+  background: rgb(246 248 249 / 88%);
+  box-shadow: 0 18px 48px rgb(32 42 50 / 16%);
+  backdrop-filter: blur(12px);
+}
+
+.panel-heading {
+  margin-bottom: 14px;
+}
+
+.eyebrow {
+  margin: 0 0 5px;
+  color: #bb3340;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  color: #1c242a;
+  font-size: clamp(1.25rem, 1.1rem + 0.45vw, 1.65rem);
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.import-panel h2 {
+  margin: 0;
+  color: #1c242a;
+  font-size: 1.2rem;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.status-panel dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+dt {
+  color: #64717a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+dd {
+  margin: 3px 0 0;
+  color: #273139;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 1fr 116px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.control-row label {
+  color: #303b43;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid #c5cdd3;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2a31;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #c3ccd3;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1f2a31;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.button:hover {
+  border-color: #82919c;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.button-primary {
+  border-color: #238fbd;
+  background: #238fbd;
+  color: #ffffff;
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.import-status {
+  margin: 12px 0 0;
+  min-height: 20px;
+  color: #5b6871;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.import-status[data-tone="loading"] {
+  color: #1f6f99;
+}
+
+.import-status[data-tone="success"] {
+  color: #27734a;
+}
+
+.import-status[data-tone="error"] {
+  color: #bb3340;
+}
+
+.design-details {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.thumbnail-frame {
+  overflow: hidden;
+  height: 132px;
+  border: 1px solid #d5dce1;
+  border-radius: 6px;
+  background: #eef1f3;
+}
+
+.thumbnail-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.design-details dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.design-details dl > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.design-details dd {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .status-panel {
+    top: 12px;
+    left: 12px;
+    width: calc(100vw - 24px);
+    padding: 13px 14px;
+  }
+
+  .status-panel dl {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .import-panel {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 45vh;
+    padding: 13px 14px;
+  }
+
+  .thumbnail-frame {
+    height: 104px;
+  }
+}

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Beyblade Physics Simulator</title>
+  </head>
+  <body>
+    <main id="app" aria-label="Beyblade physics simulator viewport">
+      <section class="status-panel" aria-label="Prototype status">
+        <p class="eyebrow">Phase 2</p>
+        <h1>Beyblade Physics Simulator</h1>
+        <dl>
+          <div>
+            <dt>Scene</dt>
+            <dd>Import Display</dd>
+          </div>
+          <div>
+            <dt>Model</dt>
+            <dd id="active-model-label">Demo Top</dd>
+          </div>
+          <div>
+            <dt>Controls</dt>
+            <dd>Orbit Camera</dd>
+          </div>
+        </dl>
+      </section>
+      <section class="import-panel" aria-labelledby="import-panel-title">
+        <div class="panel-heading">
+          <p class="eyebrow">Visual Model</p>
+          <h2 id="import-panel-title">Import Design</h2>
+        </div>
+
+        <div class="control-row">
+          <label for="up-axis">Up axis</label>
+          <select id="up-axis" name="up-axis">
+            <option value="z" selected>Z-up</option>
+            <option value="y">Y-up</option>
+          </select>
+        </div>
+
+        <div class="button-row">
+          <label class="button button-primary" for="design-file-input">
+            Import STL/OBJ
+            <input id="design-file-input" class="file-input" type="file" accept=".stl,.obj" />
+          </label>
+          <button id="load-sample-button" class="button" type="button">Load Sample STL</button>
+          <button id="reset-demo-button" class="button" type="button" hidden>Reset Demo</button>
+        </div>
+
+        <p id="import-status" class="import-status" role="status">Ready for STL or OBJ.</p>
+
+        <div id="design-details" class="design-details" hidden>
+          <div class="thumbnail-frame">
+            <img id="design-thumbnail" alt="Imported design thumbnail" />
+          </div>
+          <dl>
+            <div>
+              <dt>File</dt>
+              <dd id="detail-file-name"></dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd id="detail-file-type"></dd>
+            </div>
+            <div>
+              <dt>Size</dt>
+              <dd id="detail-file-size"></dd>
+            </div>
+            <div>
+              <dt>Raw Bounds</dt>
+              <dd id="detail-raw-dimensions"></dd>
+            </div>
+            <div>
+              <dt>Scene Bounds</dt>
+              <dd id="detail-normalized-dimensions"></dd>
+            </div>
+            <div>
+              <dt>Scale</dt>
+              <dd id="detail-scale-factor"></dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
