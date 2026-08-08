@@ -5,19 +5,23 @@ import {
   Clock,
   Color,
   DirectionalLight,
+  Group,
   HemisphereLight,
   Material,
   Mesh,
+  MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
   Scene,
   Sphere,
+  SphereGeometry,
   SRGBColorSpace,
+  TorusGeometry,
   Vector3,
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { LoadedDesign } from '../model/types';
+import type { LoadedDesign, Vector3Mm } from '../model/types';
 import { createArena } from './createArena';
 import { createTestTop } from './createTestTop';
 
@@ -25,9 +29,13 @@ export type SimulatorScene = {
   start: () => void;
   setImportedDesign: (design: LoadedDesign) => void;
   resetToDemoTop: () => void;
+  setCenterOfMassMarker: (offsetMm: Vector3Mm, design: LoadedDesign) => void;
+  clearCenterOfMassMarker: () => void;
   captureThumbnail: () => string;
   dispose: () => void;
 };
+
+const ARENA_SURFACE_Y = 0.1;
 
 export function createScene(container: HTMLElement): SimulatorScene {
   const scene = new Scene();
@@ -81,6 +89,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
 
   let importedDesignObject: Object3D | null = null;
   let importedBoundsHelper: BoxHelper | null = null;
+  let centerOfMassMarker: Group | null = null;
   let thumbnailTarget: Object3D = testTop.object;
   const clock = new Clock();
   let animationFrameId = 0;
@@ -121,7 +130,31 @@ export function createScene(container: HTMLElement): SimulatorScene {
     renderer.render(scene, camera);
   };
 
+  const ensureCenterOfMassMarker = () => {
+    if (centerOfMassMarker) {
+      return centerOfMassMarker;
+    }
+
+    centerOfMassMarker = createCenterOfMassMarker();
+    scene.add(centerOfMassMarker);
+
+    return centerOfMassMarker;
+  };
+
+  const clearCenterOfMassMarker = () => {
+    if (!centerOfMassMarker) {
+      return;
+    }
+
+    scene.remove(centerOfMassMarker);
+    disposeObject(centerOfMassMarker);
+    centerOfMassMarker = null;
+    renderScene();
+  };
+
   const removeImportedDesign = () => {
+    clearCenterOfMassMarker();
+
     if (importedBoundsHelper) {
       scene.remove(importedBoundsHelper);
       importedBoundsHelper.geometry.dispose();
@@ -189,6 +222,19 @@ export function createScene(container: HTMLElement): SimulatorScene {
       setDefaultCameraView();
       renderScene();
     },
+    setCenterOfMassMarker: (offsetMm, design) => {
+      const marker = ensureCenterOfMassMarker();
+      const designScale = Number.isFinite(design.scaleFactor) && design.scaleFactor > 0 ? design.scaleFactor : 1;
+
+      marker.position.set(
+        offsetMm.x * designScale,
+        ARENA_SURFACE_Y + offsetMm.y * designScale,
+        offsetMm.z * designScale,
+      );
+      marker.visible = true;
+      renderScene();
+    },
+    clearCenterOfMassMarker,
     captureThumbnail: () => {
       const previousPosition = camera.position.clone();
       const previousTarget = controls.target.clone();
@@ -219,6 +265,43 @@ export function createScene(container: HTMLElement): SimulatorScene {
       renderer.domElement.remove();
     },
   };
+}
+
+function createCenterOfMassMarker(): Group {
+  const marker = new Group();
+  marker.name = 'CenterOfMassMarker';
+
+  const coreMaterial = new MeshStandardMaterial({
+    color: '#f2b705',
+    emissive: '#7a3f00',
+    emissiveIntensity: 0.22,
+    metalness: 0.15,
+    roughness: 0.32,
+  });
+
+  const ringMaterial = new MeshStandardMaterial({
+    color: '#1f2a31',
+    emissive: '#f2b705',
+    emissiveIntensity: 0.08,
+    metalness: 0.1,
+    roughness: 0.42,
+  });
+
+  const core = new Mesh(new SphereGeometry(0.075, 24, 16), coreMaterial);
+  core.name = 'CenterOfMassCore';
+  core.castShadow = true;
+
+  const horizontalRing = new Mesh(new TorusGeometry(0.13, 0.006, 8, 32), ringMaterial.clone());
+  horizontalRing.name = 'CenterOfMassHorizontalRing';
+  horizontalRing.rotation.x = Math.PI / 2;
+
+  const verticalRing = new Mesh(new TorusGeometry(0.13, 0.006, 8, 32), ringMaterial);
+  verticalRing.name = 'CenterOfMassVerticalRing';
+  verticalRing.rotation.y = Math.PI / 2;
+
+  marker.add(core, horizontalRing, verticalRing);
+
+  return marker;
 }
 
 function disposeObject(object: Object3D): void {

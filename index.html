@@ -9,12 +9,12 @@
   <body>
     <main id="app" aria-label="Beyblade physics simulator viewport">
       <section class="status-panel" aria-label="Prototype status">
-        <p class="eyebrow">Phase 2</p>
+        <p class="eyebrow">Phase 3</p>
         <h1>Beyblade Physics Simulator</h1>
         <dl>
           <div>
             <dt>Scene</dt>
-            <dd>Import Display</dd>
+            <dd>Design Library</dd>
           </div>
           <div>
             <dt>Model</dt>
@@ -29,27 +29,53 @@
       <section class="import-panel" aria-labelledby="import-panel-title">
         <div class="panel-heading">
           <p class="eyebrow">Visual Model</p>
-          <h2 id="import-panel-title">Import Design</h2>
+          <h2 id="import-panel-title">Design Library</h2>
         </div>
 
-        <div class="control-row">
-          <label for="up-axis">Up axis</label>
-          <select id="up-axis" name="up-axis">
-            <option value="z" selected>Z-up</option>
-            <option value="y">Y-up</option>
-          </select>
+        <div class="tab-list" role="tablist" aria-label="Design library tools">
+          <button id="import-tab-button" class="tab-button" type="button" role="tab" aria-selected="true" aria-controls="import-pane">
+            Import
+          </button>
+          <button id="library-tab-button" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="library-pane">
+            Library
+          </button>
         </div>
 
-        <div class="button-row">
-          <label class="button button-primary" for="design-file-input">
-            Import STL/OBJ
-            <input id="design-file-input" class="file-input" type="file" accept=".stl,.obj" />
-          </label>
-          <button id="load-sample-button" class="button" type="button">Load Sample STL</button>
-          <button id="reset-demo-button" class="button" type="button" hidden>Reset Demo</button>
+        <div id="import-pane" class="tab-pane" role="tabpanel" aria-labelledby="import-tab-button">
+          <div class="control-row">
+            <label for="up-axis">Up axis</label>
+            <select id="up-axis" name="up-axis">
+              <option value="z" selected>Z-up</option>
+              <option value="y">Y-up</option>
+            </select>
+          </div>
+
+          <div class="button-row">
+            <label class="button button-primary" for="design-file-input">
+              Import STL/OBJ
+              <input id="design-file-input" class="file-input" type="file" accept=".stl,.obj" />
+            </label>
+            <button id="load-sample-button" class="button" type="button">Load Sample STL</button>
+            <button id="reset-demo-button" class="button" type="button" hidden>Reset Demo</button>
+          </div>
+
+          <p id="import-status" class="import-status" role="status">Ready for STL or OBJ.</p>
+
+          <div id="save-controls" class="save-controls" hidden>
+            <label for="save-name-input">Design name</label>
+            <div class="save-row">
+              <input id="save-name-input" type="text" maxlength="80" autocomplete="off" />
+              <button id="save-design-button" class="button button-primary" type="button">Save Design</button>
+            </div>
+            <p id="saved-state-label" class="saved-state">Unsaved</p>
+          </div>
         </div>
 
-        <p id="import-status" class="import-status" role="status">Ready for STL or OBJ.</p>
+        <div id="library-pane" class="tab-pane" role="tabpanel" aria-labelledby="library-tab-button" hidden>
+          <p id="library-status" class="import-status" role="status">Loading saved designs...</p>
+          <p id="library-empty-state" class="library-empty" hidden>No saved designs yet.</p>
+          <div id="library-list" class="library-list" aria-label="Saved designs"></div>
+        </div>
 
         <div id="design-details" class="design-details" hidden>
           <div class="thumbnail-frame">
