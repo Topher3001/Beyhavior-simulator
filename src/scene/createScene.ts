@@ -22,13 +22,23 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { LoadedDesign, Vector3Mm } from '../model/types';
+import type { BattleSide, SimulationTransform } from '../simulation/types';
 import { createArena } from './createArena';
 import { createTestTop } from './createTestTop';
+
+type FrameUpdateCallback = (deltaSeconds: number, elapsedSeconds: number) => void;
 
 export type SimulatorScene = {
   start: () => void;
   setImportedDesign: (design: LoadedDesign) => void;
   resetToDemoTop: () => void;
+  setFrameUpdate: (callback: FrameUpdateCallback | null) => void;
+  setSimulationTransform: (design: LoadedDesign, transform: SimulationTransform) => void;
+  setSimulationMode: (active: boolean) => void;
+  setBattleDesigns: (left: LoadedDesign, right: LoadedDesign) => void;
+  setBattleTransform: (side: BattleSide, transform: SimulationTransform) => void;
+  setBattleMode: (active: boolean) => void;
+  clearBattleMode: () => void;
   setCenterOfMassMarker: (offsetMm: Vector3Mm, design: LoadedDesign) => void;
   clearCenterOfMassMarker: () => void;
   captureThumbnail: () => string;
@@ -88,9 +98,14 @@ export function createScene(container: HTMLElement): SimulatorScene {
   scene.add(testTop.object);
 
   let importedDesignObject: Object3D | null = null;
+  let activeImportedDesign: LoadedDesign | null = null;
   let importedBoundsHelper: BoxHelper | null = null;
+  let battleDesignObjects: Partial<Record<BattleSide, Object3D>> = {};
+  let battleBoundsHelpers: BoxHelper[] = [];
   let centerOfMassMarker: Group | null = null;
   let thumbnailTarget: Object3D = testTop.object;
+  let frameUpdate: FrameUpdateCallback | null = null;
+  let isSimulationModeActive = false;
   const clock = new Clock();
   let animationFrameId = 0;
   let disposed = false;
@@ -120,6 +135,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
       testTop.update(delta, elapsed);
     }
 
+    frameUpdate?.(delta, elapsed);
     importedBoundsHelper?.update();
     controls.update();
     renderScene();
@@ -154,6 +170,8 @@ export function createScene(container: HTMLElement): SimulatorScene {
 
   const removeImportedDesign = () => {
     clearCenterOfMassMarker();
+    activeImportedDesign = null;
+    isSimulationModeActive = false;
 
     if (importedBoundsHelper) {
       scene.remove(importedBoundsHelper);
@@ -169,8 +187,55 @@ export function createScene(container: HTMLElement): SimulatorScene {
     }
   };
 
+  const removeBattleDesigns = () => {
+    battleBoundsHelpers.forEach((helper) => {
+      scene.remove(helper);
+      helper.geometry.dispose();
+      disposeMaterial(helper.material);
+    });
+    battleBoundsHelpers = [];
+
+    (Object.keys(battleDesignObjects) as BattleSide[]).forEach((side) => {
+      const object = battleDesignObjects[side];
+
+      if (!object) {
+        return;
+      }
+
+      scene.remove(object);
+      disposeObject(object);
+    });
+
+    battleDesignObjects = {};
+    isSimulationModeActive = false;
+  };
+
   const fitCameraToObject = (object: Object3D, padding = 1.45) => {
     const bounds = new Box3().setFromObject(object);
+
+    if (bounds.isEmpty()) {
+      return;
+    }
+
+    const sphere = bounds.getBoundingSphere(new Sphere());
+    const direction = new Vector3(1.1, 0.72, 1).normalize();
+    const fovRadians = (camera.fov * Math.PI) / 180;
+    const distance = Math.max((sphere.radius / Math.sin(fovRadians / 2)) * padding, 4.2);
+
+    camera.position.copy(sphere.center).add(direction.multiplyScalar(distance));
+    camera.near = Math.max(distance / 100, 0.01);
+    camera.far = Math.max(distance * 100, 100);
+    camera.updateProjectionMatrix();
+    controls.target.copy(sphere.center);
+    controls.update();
+  };
+
+  const fitCameraToObjects = (objects: Object3D[], padding = 1.45) => {
+    const bounds = new Box3();
+
+    objects.forEach((object) => {
+      bounds.union(new Box3().setFromObject(object));
+    });
 
     if (bounds.isEmpty()) {
       return;
@@ -204,22 +269,118 @@ export function createScene(container: HTMLElement): SimulatorScene {
       render();
     },
     setImportedDesign: (design) => {
+      removeBattleDesigns();
       removeImportedDesign();
       testTop.object.visible = false;
-      importedDesignObject = design.object;
-      importedBoundsHelper = new BoxHelper(design.object, '#238fbd');
-      thumbnailTarget = design.object;
-      scene.add(design.object);
+      activeImportedDesign = design;
+
+      const simulationAnchor = new Group();
+      simulationAnchor.name = 'ImportedDesignSimulationAnchor';
+      simulationAnchor.add(design.object);
+
+      importedDesignObject = simulationAnchor;
+      importedBoundsHelper = new BoxHelper(simulationAnchor, '#238fbd');
+      thumbnailTarget = simulationAnchor;
+      scene.add(simulationAnchor);
       scene.add(importedBoundsHelper);
-      fitCameraToObject(design.object);
+      fitCameraToObject(simulationAnchor);
       renderScene();
     },
     resetToDemoTop: () => {
       removeImportedDesign();
+      removeBattleDesigns();
       testTop.object.visible = true;
       testTop.object.rotation.set(0, 0, 0);
       thumbnailTarget = testTop.object;
       setDefaultCameraView();
+      renderScene();
+    },
+    setFrameUpdate: (callback) => {
+      frameUpdate = callback;
+    },
+    setSimulationTransform: (design, transform) => {
+      if (design !== activeImportedDesign || !importedDesignObject) {
+        return;
+      }
+
+      importedDesignObject.position.set(transform.position.x, transform.position.y, transform.position.z);
+      importedDesignObject.quaternion.set(
+        transform.quaternion.x,
+        transform.quaternion.y,
+        transform.quaternion.z,
+        transform.quaternion.w,
+      );
+      importedBoundsHelper?.update();
+      renderScene();
+    },
+    setSimulationMode: (active) => {
+      isSimulationModeActive = active;
+
+      if (centerOfMassMarker) {
+        centerOfMassMarker.visible = !active;
+      }
+
+      if (importedBoundsHelper) {
+        importedBoundsHelper.visible = !active;
+      }
+
+      renderScene();
+    },
+    setBattleDesigns: (left, right) => {
+      removeImportedDesign();
+      removeBattleDesigns();
+      clearCenterOfMassMarker();
+      testTop.object.visible = false;
+
+      const leftAnchor = createBattleAnchor('left', left);
+      const rightAnchor = createBattleAnchor('right', right);
+      leftAnchor.position.set(-1.4, 0, 0);
+      rightAnchor.position.set(1.4, 0, 0);
+
+      battleDesignObjects = {
+        left: leftAnchor,
+        right: rightAnchor,
+      };
+
+      const leftHelper = new BoxHelper(leftAnchor, '#bb3340');
+      const rightHelper = new BoxHelper(rightAnchor, '#238fbd');
+      battleBoundsHelpers = [leftHelper, rightHelper];
+      scene.add(leftAnchor, rightAnchor, leftHelper, rightHelper);
+      thumbnailTarget = leftAnchor;
+      fitCameraToObjects([leftAnchor, rightAnchor]);
+      renderScene();
+    },
+    setBattleTransform: (side, transform) => {
+      const object = battleDesignObjects[side];
+
+      if (!object) {
+        return;
+      }
+
+      object.position.set(transform.position.x, transform.position.y, transform.position.z);
+      object.quaternion.set(
+        transform.quaternion.x,
+        transform.quaternion.y,
+        transform.quaternion.z,
+        transform.quaternion.w,
+      );
+      battleBoundsHelpers.forEach((helper) => helper.update());
+      renderScene();
+    },
+    setBattleMode: (active) => {
+      isSimulationModeActive = active;
+
+      if (centerOfMassMarker) {
+        centerOfMassMarker.visible = false;
+      }
+
+      battleBoundsHelpers.forEach((helper) => {
+        helper.visible = !active;
+      });
+      renderScene();
+    },
+    clearBattleMode: () => {
+      removeBattleDesigns();
       renderScene();
     },
     setCenterOfMassMarker: (offsetMm, design) => {
@@ -231,7 +392,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
         ARENA_SURFACE_Y + offsetMm.y * designScale,
         offsetMm.z * designScale,
       );
-      marker.visible = true;
+      marker.visible = !isSimulationModeActive;
       renderScene();
     },
     clearCenterOfMassMarker,
@@ -302,6 +463,14 @@ function createCenterOfMassMarker(): Group {
   marker.add(core, horizontalRing, verticalRing);
 
   return marker;
+}
+
+function createBattleAnchor(side: BattleSide, design: LoadedDesign): Group {
+  const anchor = new Group();
+  anchor.name = side === 'left' ? 'BattleLeftDesignAnchor' : 'BattleRightDesignAnchor';
+  anchor.add(design.object);
+
+  return anchor;
 }
 
 function disposeObject(object: Object3D): void {

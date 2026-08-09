@@ -4,11 +4,14 @@ import {
   type PhysicsProfilePatch,
 } from '../model/physicsProfile';
 import type { LoadedDesign, PhysicsProfile, StoredDesign, StoredDesignMetadata } from '../model/types';
+import type { BattleResult } from '../simulation/types';
 
 const DATABASE_NAME = 'beyblade-simulator';
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const DESIGN_STORE_NAME = 'designs';
+const BATTLE_RESULT_STORE_NAME = 'battleResults';
 const UPDATED_AT_INDEX_NAME = 'updatedAt';
+const CREATED_AT_INDEX_NAME = 'createdAt';
 
 type StoredDesignRecord = Omit<StoredDesign, 'physicsProfile'> & {
   physicsProfile?: PhysicsProfile;
@@ -184,6 +187,56 @@ export async function deleteStoredDesign(id: string): Promise<void> {
   }
 }
 
+export async function saveBattleResult(result: Omit<BattleResult, 'id' | 'createdAt'>): Promise<BattleResult> {
+  const storedResult: BattleResult = {
+    ...result,
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+  };
+  const database = await openDatabase();
+
+  try {
+    const transaction = database.transaction(BATTLE_RESULT_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(BATTLE_RESULT_STORE_NAME);
+    const done = transactionDone(transaction);
+    await requestToPromise(store.put(storedResult));
+    await done;
+
+    return storedResult;
+  } finally {
+    database.close();
+  }
+}
+
+export async function listBattleResults(limit = 20): Promise<BattleResult[]> {
+  const database = await openDatabase();
+
+  try {
+    const transaction = database.transaction(BATTLE_RESULT_STORE_NAME, 'readonly');
+    const store = transaction.objectStore(BATTLE_RESULT_STORE_NAME);
+    const index = store.index(CREATED_AT_INDEX_NAME);
+    const records = await collectFromCursor<BattleResult>(index.openCursor(null, 'prev'), limit);
+
+    return records;
+  } finally {
+    database.close();
+  }
+}
+
+export async function deleteBattleResult(id: string): Promise<void> {
+  const database = await openDatabase();
+
+  try {
+    const transaction = database.transaction(BATTLE_RESULT_STORE_NAME, 'readwrite');
+    const store = transaction.objectStore(BATTLE_RESULT_STORE_NAME);
+    const done = transactionDone(transaction);
+    await requestToPromise(store.delete(id));
+    await done;
+  } finally {
+    database.close();
+  }
+}
+
 export function getDefaultDisplayName(fileName: string): string {
   const withoutExtension = fileName.replace(/\.[^.]+$/, '');
   return sanitizeDisplayName(withoutExtension);
@@ -205,6 +258,17 @@ function openDatabase(): Promise<IDBDatabase> {
 
       if (store && event.oldVersion < 2) {
         backfillPhysicsProfiles(store);
+      }
+
+      if (!database.objectStoreNames.contains(BATTLE_RESULT_STORE_NAME)) {
+        const battleResultStore = database.createObjectStore(BATTLE_RESULT_STORE_NAME, { keyPath: 'id' });
+        battleResultStore.createIndex(CREATED_AT_INDEX_NAME, 'createdAt');
+      } else {
+        const battleResultStore = request.transaction?.objectStore(BATTLE_RESULT_STORE_NAME);
+
+        if (battleResultStore && !battleResultStore.indexNames.contains(CREATED_AT_INDEX_NAME)) {
+          battleResultStore.createIndex(CREATED_AT_INDEX_NAME, 'createdAt');
+        }
       }
     });
 
@@ -237,7 +301,7 @@ function backfillPhysicsProfiles(store: IDBObjectStore): void {
   });
 }
 
-function collectFromCursor<T>(request: IDBRequest<IDBCursorWithValue | null>): Promise<T[]> {
+function collectFromCursor<T>(request: IDBRequest<IDBCursorWithValue | null>, limit = Number.POSITIVE_INFINITY): Promise<T[]> {
   return new Promise((resolve, reject) => {
     const records: T[] = [];
 
@@ -250,6 +314,12 @@ function collectFromCursor<T>(request: IDBRequest<IDBCursorWithValue | null>): P
       }
 
       records.push(cursor.value as T);
+
+      if (records.length >= limit) {
+        resolve(records);
+        return;
+      }
+
       cursor.continue();
     });
 

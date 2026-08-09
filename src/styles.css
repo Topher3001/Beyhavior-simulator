@@ -75,7 +75,7 @@ body {
 
 .tab-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 14px;
   padding: 4px;
@@ -210,6 +210,12 @@ input[type="number"] {
   font: inherit;
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+.inline-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 .button-row {
@@ -384,11 +390,187 @@ input[type="number"] {
 
 .physics-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   align-items: center;
   padding-top: 12px;
   border-top: 1px solid #d5dce1;
+}
+
+.physics-actions .saved-state {
+  grid-column: 1 / -1;
+}
+
+.sim-controls {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.sim-button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sim-telemetry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid #d5dce1;
+}
+
+.sim-telemetry > div {
+  min-width: 0;
+}
+
+.sim-telemetry dd {
+  overflow-wrap: anywhere;
+}
+
+.battle-slots,
+.battle-controls,
+.battle-history {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.battle-slot {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #d5dce1;
+}
+
+.battle-slot:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.battle-slot h3,
+.battle-history h3 {
+  margin: 0;
+  color: #303b43;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.battle-summary {
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid #d5dce1;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 70%);
+  color: #5b6871;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.battle-result {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d5dce1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #303b43;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.battle-telemetry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid #d5dce1;
+}
+
+.battle-telemetry > div {
+  min-width: 0;
+}
+
+.battle-telemetry dd {
+  overflow-wrap: anywhere;
+}
+
+.battle-history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.battle-history-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d5dce1;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 76%);
+}
+
+.battle-history-card p {
+  margin: 0;
+  color: #303b43;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.battle-history-card small {
+  color: #64717a;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.results-controls,
+.replay-controls,
+.contact-events {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.results-chart {
+  display: block;
+  width: 100%;
+  height: 220px;
+  border: 1px solid #d5dce1;
+  border-radius: 6px;
+  background: #f8fafb;
+}
+
+.timeline-input {
+  width: 100%;
+  accent-color: #238fbd;
+}
+
+.contact-events h3 {
+  margin: 0;
+  color: #303b43;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.contact-events-list {
+  display: grid;
+  gap: 6px;
+}
+
+.contact-event {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #d5dce1;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 76%);
+  color: #303b43;
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .library-empty {
@@ -513,7 +695,25 @@ input[type="number"] {
     left: 12px;
     width: auto;
     max-height: 52vh;
+    overflow-x: hidden;
     padding: 13px 14px;
+  }
+
+  .control-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .tab-list,
+  .inline-control,
+  .sim-button-row,
+  .sim-telemetry,
+  .battle-telemetry {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .results-chart {
+    height: 180px;
   }
 
   .thumbnail-frame {
