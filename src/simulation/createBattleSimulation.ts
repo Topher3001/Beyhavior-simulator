@@ -1,4 +1,3 @@
-import RAPIER from '@dimforge/rapier3d-compat';
 import type { SimulatorScene } from '../scene/createScene';
 import {
   DRAW_WINDOW_SECONDS,
@@ -53,9 +52,7 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
   const rapier = await getRapier();
   let slots: Record<BattleSide, BattleSlot> | null = null;
   let world: RapierWorld | null = null;
-  let eventQueue: InstanceType<RapierRuntime['EventQueue']> | null = null;
   let topStates: Partial<Record<BattleSide, BattleTopState>> = {};
-  let bodySideByHandle = new Map<number, BattleSide>();
   let accumulatorSeconds = 0;
   let elapsedSeconds = 0;
   let lastContactSeconds = Number.NEGATIVE_INFINITY;
@@ -63,11 +60,6 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
   const traceRecorder = createTraceRecorder();
 
   const freeWorld = () => {
-    if (eventQueue) {
-      eventQueue.free();
-      eventQueue = null;
-    }
-
     if (!world) {
       return;
     }
@@ -85,20 +77,12 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
     freeWorld();
     world = new rapier.World({ x: 0, y: -9.81, z: 0 });
     world.timestep = FIXED_TIMESTEP_SECONDS;
-    eventQueue = new rapier.EventQueue(true);
     createArenaColliders(rapier as RapierRuntime, world);
 
     topStates = {
       left: createBattleTopState(rapier as RapierRuntime, world, slots.left, withLaunchVelocity),
       right: createBattleTopState(rapier as RapierRuntime, world, slots.right, withLaunchVelocity),
     };
-    bodySideByHandle = new Map(
-      SIDES.flatMap((side) => {
-        const state = topStates[side];
-
-        return state ? [[state.body.handle, side] as const] : [];
-      }),
-    );
     accumulatorSeconds = 0;
     elapsedSeconds = 0;
     lastContactSeconds = Number.NEGATIVE_INFINITY;
@@ -131,14 +115,14 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
       applyWobbleTorque(state.body, state.proxyGeometry);
     }
 
-    world.step(eventQueue ?? undefined);
-    drainContactEvents();
+    world.step();
+    recordAnalyticContactEvent();
 
     for (const side of SIDES) {
       const state = topStates[side];
 
       if (state) {
-        stabilizeTopGroundContact(state.body, state.proxyGeometry);
+        stabilizeTopGroundContact(state.body, state.proxyGeometry, deltaSeconds);
         applyArenaContainment(state.body, state.proxyGeometry);
       }
     }
@@ -268,60 +252,44 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
     );
   };
 
-  const drainContactEvents = () => {
-    if (!world || !eventQueue || !topStates.left || !topStates.right) {
+  const recordAnalyticContactEvent = () => {
+    if (!topStates.left || !topStates.right || elapsedSeconds - lastContactSeconds < 0.05) {
       return;
     }
 
-    eventQueue.drainCollisionEvents((firstHandle, secondHandle, started) => {
-      if (!started || elapsedSeconds - lastContactSeconds < 0.05) {
-        return;
-      }
+    const leftTranslation = topStates.left.body.translation();
+    const rightTranslation = topStates.right.body.translation();
+    const leftVelocity = topStates.left.body.linvel();
+    const rightVelocity = topStates.right.body.linvel();
+    const horizontalDistance = Math.hypot(
+      leftTranslation.x - rightTranslation.x,
+      leftTranslation.z - rightTranslation.z,
+    );
+    const verticalDistance = Math.abs(leftTranslation.y - rightTranslation.y);
+    const contactDistance = (topStates.left.proxyGeometry.radiusWorld + topStates.right.proxyGeometry.radiusWorld) * 0.92;
+    const maxVerticalDistance = Math.max(topStates.left.proxyGeometry.heightWorld, topStates.right.proxyGeometry.heightWorld) * 0.72;
 
-      const firstSide = getColliderSide(firstHandle);
-      const secondSide = getColliderSide(secondHandle);
-
-      if (!firstSide || !secondSide || firstSide === secondSide) {
-        return;
-      }
-
-      const leftTranslation = topStates.left?.body.translation();
-      const rightTranslation = topStates.right?.body.translation();
-      const leftVelocity = topStates.left?.body.linvel();
-      const rightVelocity = topStates.right?.body.linvel();
-
-      if (!leftTranslation || !rightTranslation || !leftVelocity || !rightVelocity) {
-        return;
-      }
-
-      lastContactSeconds = elapsedSeconds;
-      traceRecorder.recordContact({
-        timeSeconds: elapsedSeconds,
-        leftPosition: {
-          x: leftTranslation.x,
-          z: leftTranslation.z,
-        },
-        rightPosition: {
-          x: rightTranslation.x,
-          z: rightTranslation.z,
-        },
-        relativeSpeed: Math.hypot(
-          leftVelocity.x - rightVelocity.x,
-          leftVelocity.y - rightVelocity.y,
-          leftVelocity.z - rightVelocity.z,
-        ),
-      });
-    });
-  };
-
-  const getColliderSide = (colliderHandle: number): BattleSide | undefined => {
-    if (!world) {
-      return undefined;
+    if (horizontalDistance > contactDistance || verticalDistance > maxVerticalDistance) {
+      return;
     }
 
-    const parent = world.getCollider(colliderHandle).parent();
-
-    return parent ? bodySideByHandle.get(parent.handle) : undefined;
+    lastContactSeconds = elapsedSeconds;
+    traceRecorder.recordContact({
+      timeSeconds: elapsedSeconds,
+      leftPosition: {
+        x: leftTranslation.x,
+        z: leftTranslation.z,
+      },
+      rightPosition: {
+        x: rightTranslation.x,
+        z: rightTranslation.z,
+      },
+      relativeSpeed: Math.hypot(
+        leftVelocity.x - rightVelocity.x,
+        leftVelocity.y - rightVelocity.y,
+        leftVelocity.z - rightVelocity.z,
+      ),
+    });
   };
 
   return {

@@ -11,6 +11,11 @@ import {
   isPositionInPocket,
 } from './stadiumConfig';
 import {
+  getStadiumSurfaceGradientAt,
+  getStadiumSurfaceYAt,
+  getStadiumSurfaceYByProgress,
+} from './stadiumSurface';
+import {
   degreesToRadians,
   gramsToKilograms,
   profileMmToSceneWorld,
@@ -55,9 +60,9 @@ export type TopRigidBodyOptions = {
 };
 
 export const ARENA_SURFACE_Y = STADIUM_SURFACE_Y;
-export const FIXED_TIMESTEP_SECONDS = 1 / 120;
-export const MAX_ACCUMULATED_SECONDS = 1 / 12;
-export const MAX_STEPS_PER_FRAME = 8;
+export const FIXED_TIMESTEP_SECONDS = 1 / 90;
+export const MAX_ACCUMULATED_SECONDS = 1 / 10;
+export const MAX_STEPS_PER_FRAME = 4;
 export const STOP_RPM_THRESHOLD = 120;
 export const STOP_TILT_DEGREES = 75;
 export const STOP_DURATION_SECONDS = 1.25;
@@ -66,17 +71,11 @@ export const DRAW_WINDOW_SECONDS = 0.75;
 
 const MAX_HORIZONTAL_SPEED = 3;
 const MAX_UPWARD_SPEED = 0.28;
+const BOWL_SLOPE_ACCELERATION_SCALE = 0.42;
 const WORLD_UP = new Vector3(0, 1, 0);
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
 
 export function createArenaColliders(rapier: RapierRuntime, world: RapierWorld): void {
-  const stadium = getActiveStadiumPreset();
-  const floorDesc = rapier.ColliderDesc.cylinder(0.06, stadium.playRadiusWorld)
-    .setTranslation(0, ARENA_SURFACE_Y - 0.06, 0)
-    .setFriction(stadium.floorFriction)
-    .setRestitution(0);
-
-  world.createCollider(floorDesc);
   createTornadoRidgeColliders(rapier, world);
   createWallColliders(rapier, world);
   createPocketGuardColliders(rapier, world);
@@ -88,6 +87,7 @@ function createWallColliders(rapier: RapierRuntime, world: RapierWorld): void {
   const rimRadius = stadium.wallRadiusWorld;
   const rimHeight = stadium.wallHeightWorld;
   const rimThickness = stadium.wallThicknessWorld;
+  const rimSurfaceY = getStadiumSurfaceYByProgress(1, stadium);
   const segmentLength = (Math.PI * 2 * rimRadius) / segmentCount;
 
   for (let index = 0; index < segmentCount; index += 1) {
@@ -100,7 +100,7 @@ function createWallColliders(rapier: RapierRuntime, world: RapierWorld): void {
 
     const yaw = angle + Math.PI / 2;
     const rimDesc = rapier.ColliderDesc.cuboid(segmentLength * 0.52, rimHeight / 2, rimThickness / 2)
-      .setTranslation(Math.cos(angle) * rimRadius, ARENA_SURFACE_Y + rimHeight / 2, Math.sin(angle) * rimRadius)
+      .setTranslation(Math.cos(angle) * rimRadius, rimSurfaceY + rimHeight / 2, Math.sin(angle) * rimRadius)
       .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) })
       .setFriction(stadium.wallFriction)
       .setRestitution(0.015);
@@ -111,17 +111,18 @@ function createWallColliders(rapier: RapierRuntime, world: RapierWorld): void {
 
 function createTornadoRidgeColliders(rapier: RapierRuntime, world: RapierWorld): void {
   const stadium = getActiveStadiumPreset();
-  const segmentCount = 64;
+  const segmentCount = 40;
   const ridgeRadius = stadium.tornadoRidgeRadiusWorld;
   const ridgeThickness = 0.08;
-  const ridgeHeight = 0.035;
+  const ridgeHeight = Math.max(stadium.tornadoRidgeHeightWorld, 0.035);
   const segmentLength = (Math.PI * 2 * ridgeRadius) / segmentCount;
 
   for (let index = 0; index < segmentCount; index += 1) {
     const angle = (index / segmentCount) * Math.PI * 2;
     const yaw = angle + Math.PI / 2;
+    const surfaceY = getStadiumSurfaceYAt(Math.cos(angle) * ridgeRadius, Math.sin(angle) * ridgeRadius, stadium);
     const ridgeDesc = rapier.ColliderDesc.cuboid(segmentLength * 0.54, ridgeHeight / 2, ridgeThickness / 2)
-      .setTranslation(Math.cos(angle) * ridgeRadius, ARENA_SURFACE_Y + ridgeHeight / 2, Math.sin(angle) * ridgeRadius)
+      .setTranslation(Math.cos(angle) * ridgeRadius, surfaceY + ridgeHeight / 2, Math.sin(angle) * ridgeRadius)
       .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) })
       .setFriction(stadium.floorFriction * 1.4)
       .setRestitution(0.005);
@@ -132,6 +133,7 @@ function createTornadoRidgeColliders(rapier: RapierRuntime, world: RapierWorld):
 
 function createPocketGuardColliders(rapier: RapierRuntime, world: RapierWorld): void {
   const stadium = getActiveStadiumPreset();
+  const rimSurfaceY = getStadiumSurfaceYByProgress(1, stadium);
 
   for (const pocket of stadium.pockets) {
     const halfWidth = pocket.widthDegrees / 2;
@@ -141,7 +143,7 @@ function createPocketGuardColliders(rapier: RapierRuntime, world: RapierWorld): 
       const guardLength = stadium.pocketGuardLengthWorld + pocket.depthWorld * 0.4;
       const radialCenter = stadium.wallRadiusWorld + guardLength / 2 - 0.1;
       const guardDesc = rapier.ColliderDesc.cuboid(guardLength / 2, stadium.wallHeightWorld / 2, stadium.wallThicknessWorld / 2)
-        .setTranslation(Math.cos(angle) * radialCenter, ARENA_SURFACE_Y + stadium.wallHeightWorld / 2, Math.sin(angle) * radialCenter)
+        .setTranslation(Math.cos(angle) * radialCenter, rimSurfaceY + stadium.wallHeightWorld / 2, Math.sin(angle) * radialCenter)
         .setRotation({ x: 0, y: Math.sin(-angle / 2), z: 0, w: Math.cos(-angle / 2) })
         .setFriction(stadium.wallFriction)
         .setRestitution(0.012);
@@ -163,10 +165,11 @@ export function createTopRigidBody(
   const launchTiltRadians = degreesToRadians(launchSettings.angleDegrees);
   const launchRotation = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), launchTiltRadians);
   const launchPosition = getClampedLaunchPosition(launchSettings.position, proxyGeometry.radiusWorld);
+  const launchSurfaceOffsetY = getBodyYOffsetForSurface(launchPosition.x, launchPosition.z);
   const inertia = estimateCylinderInertia(proxyGeometry.massKg, proxyGeometry.radiusWorld, proxyGeometry.heightWorld);
 
   const bodyDesc = rapier.RigidBodyDesc.dynamic()
-    .setTranslation(launchPosition.x, 0, launchPosition.z)
+    .setTranslation(launchPosition.x, launchSurfaceOffsetY, launchPosition.z)
     .setRotation(toRapierQuaternion(launchRotation))
     .setLinvel(
       withLaunchVelocity ? launchSettings.linearVelocity?.x ?? 0 : 0,
@@ -190,8 +193,6 @@ export function createTopRigidBody(
       },
       IDENTITY_ROTATION,
     )
-    .setCcdEnabled(true)
-    .setSoftCcdPrediction(0.05)
     .setCanSleep(false);
 
   const topBody = world.createRigidBody(bodyDesc);
@@ -320,35 +321,60 @@ export function applyArenaContainment(body: RapierRigidBody, proxyGeometry: Prox
   );
 }
 
-export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: ProxyGeometry): void {
+export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: ProxyGeometry, deltaSeconds = FIXED_TIMESTEP_SECONDS): void {
   const translation = body.translation();
   const linearVelocity = body.linvel();
+  const stadium = getActiveStadiumPreset();
+  const groundBodyY = getBodyYOffsetForSurface(translation.x, translation.z);
   const softHoverY = Math.max(proxyGeometry.tipRadiusWorld * 0.45, 0.035);
   const hardHoverY = Math.max(proxyGeometry.tipRadiusWorld * 1.15, 0.11);
   let nextY = translation.y;
+  let nextVelocityX = linearVelocity.x;
   let nextVelocityY = linearVelocity.y;
+  let nextVelocityZ = linearVelocity.z;
   let shouldUpdateTranslation = false;
   let shouldUpdateVelocity = false;
 
-  if (nextY < -0.02) {
-    nextY = 0;
+  if (nextY < groundBodyY - 0.02) {
+    nextY = groundBodyY;
     nextVelocityY = Math.max(0, nextVelocityY);
     shouldUpdateTranslation = true;
     shouldUpdateVelocity = true;
   }
 
-  if (nextY > hardHoverY) {
-    nextY = hardHoverY;
+  if (nextY > groundBodyY + hardHoverY) {
+    nextY = groundBodyY + hardHoverY;
     nextVelocityY = Math.min(0, nextVelocityY);
     shouldUpdateTranslation = true;
     shouldUpdateVelocity = true;
-  } else if (nextY > softHoverY && nextVelocityY > 0) {
+  } else if (nextY > groundBodyY + softHoverY && nextVelocityY > 0) {
     nextVelocityY *= 0.18;
     shouldUpdateVelocity = true;
   }
 
   if (nextVelocityY > MAX_UPWARD_SPEED) {
     nextVelocityY = MAX_UPWARD_SPEED;
+    shouldUpdateVelocity = true;
+  }
+
+  const contactWindow = Math.max(hardHoverY, 0.12);
+  const contactStrength = Math.max(0, Math.min((groundBodyY + contactWindow - nextY) / contactWindow, 1));
+
+  if (contactStrength > 0) {
+    const gradient = getStadiumSurfaceGradientAt(translation.x, translation.z, stadium);
+    const accelerationScale = 9.81 * BOWL_SLOPE_ACCELERATION_SCALE * contactStrength;
+
+    nextVelocityX -= gradient.x * accelerationScale * deltaSeconds;
+    nextVelocityZ -= gradient.z * accelerationScale * deltaSeconds;
+
+    const horizontalSpeed = Math.hypot(nextVelocityX, nextVelocityZ);
+
+    if (horizontalSpeed > MAX_HORIZONTAL_SPEED) {
+      const speedScale = MAX_HORIZONTAL_SPEED / horizontalSpeed;
+      nextVelocityX *= speedScale;
+      nextVelocityZ *= speedScale;
+    }
+
     shouldUpdateVelocity = true;
   }
 
@@ -366,9 +392,9 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
   if (shouldUpdateVelocity) {
     body.setLinvel(
       {
-        x: linearVelocity.x,
+        x: nextVelocityX,
         y: nextVelocityY,
-        z: linearVelocity.z,
+        z: nextVelocityZ,
       },
       true,
     );
@@ -477,7 +503,7 @@ function createTopColliders(
   const bodyHeight = Math.max(proxyGeometry.heightWorld - proxyGeometry.tipRadiusWorld * 0.7, 0.08);
   const bodyFloorClearance = getBodyFloorClearance(proxyGeometry);
   const bodyCenterY = ARENA_SURFACE_Y + bodyFloorClearance + bodyHeight / 2;
-  const activeEvents = options.includeBattleRing ? rapier.ActiveEvents.COLLISION_EVENTS : rapier.ActiveEvents.NONE;
+  const activeEvents = rapier.ActiveEvents.NONE;
   const coreRadius = options.includeBattleRing
     ? proxyGeometry.radiusWorld * (0.72 + (1 - proxyGeometry.attackBias) * 0.1)
     : proxyGeometry.radiusWorld;
@@ -521,7 +547,7 @@ function createStrikePointColliders(
   bodyHeight: number,
   activeEvents: number,
 ): void {
-  const pointCount = Math.max(1, proxyGeometry.contactPointCount);
+  const pointCount = Math.min(4, Math.max(1, proxyGeometry.contactPointCount));
   const contactRadius = proxyGeometry.radiusWorld * (0.78 + proxyGeometry.attackBias * 0.22);
   const pointRadius = clamp(proxyGeometry.radiusWorld * (0.085 + proxyGeometry.attackBias * 0.055), 0.045, 0.22);
   const verticalOffset = bodyHeight * (0.1 + proxyGeometry.attackBias * 0.18);
@@ -616,6 +642,10 @@ function getClampedLaunchPosition(position: LaunchSettings['position'], radiusWo
     x: requested.x,
     z: requested.z,
   };
+}
+
+function getBodyYOffsetForSurface(x: number, z: number): number {
+  return getStadiumSurfaceYAt(x, z, getActiveStadiumPreset()) - ARENA_SURFACE_Y;
 }
 
 function toRapierQuaternion(quaternion: Quaternion): { x: number; y: number; z: number; w: number } {

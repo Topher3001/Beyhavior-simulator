@@ -165,6 +165,14 @@ h1 {
   line-height: 1.35;
 }
 
+.index-credit {
+  margin: 12px 0 0;
+  color: #64717a;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 dt {
   color: #64717a;
   font-size: 0.68rem;

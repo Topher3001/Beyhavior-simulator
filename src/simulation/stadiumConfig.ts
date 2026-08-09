@@ -28,6 +28,10 @@ export type StadiumPreset = {
   wallFriction: number;
   floorFriction: number;
   pocketGuardLengthWorld: number;
+  bowlDepthWorld: number;
+  bowlCurve: number;
+  outerLipLiftWorld: number;
+  tornadoRidgeHeightWorld: number;
   pockets: StadiumPocket[];
 };
 
@@ -56,6 +60,10 @@ export const STADIUM_PRESETS: StadiumPreset[] = [
     wallFriction: 0.09,
     floorFriction: 0.035,
     pocketGuardLengthWorld: 1.25,
+    bowlDepthWorld: 0.9,
+    bowlCurve: 1.65,
+    outerLipLiftWorld: 0.18,
+    tornadoRidgeHeightWorld: 0.075,
     pockets: [
       { label: 'KO Gap A', angleDegrees: 90, widthDegrees: 52, depthWorld: 1.05, kind: 'gap' },
       { label: 'KO Gap B', angleDegrees: 210, widthDegrees: 52, depthWorld: 1.05, kind: 'gap' },
@@ -81,6 +89,10 @@ export const STADIUM_PRESETS: StadiumPreset[] = [
     wallFriction: 0.075,
     floorFriction: 0.033,
     pocketGuardLengthWorld: 1.05,
+    bowlDepthWorld: 0.96,
+    bowlCurve: 1.78,
+    outerLipLiftWorld: 0.2,
+    tornadoRidgeHeightWorld: 0.07,
     pockets: [
       { label: 'Pocket A', angleDegrees: 90, widthDegrees: 44, depthWorld: 0.95, kind: 'pocket' },
       { label: 'Pocket B', angleDegrees: 210, widthDegrees: 44, depthWorld: 0.95, kind: 'pocket' },
@@ -106,6 +118,10 @@ export const STADIUM_PRESETS: StadiumPreset[] = [
     wallFriction: 0.07,
     floorFriction: 0.032,
     pocketGuardLengthWorld: 1.35,
+    bowlDepthWorld: 1.04,
+    bowlCurve: 1.85,
+    outerLipLiftWorld: 0.22,
+    tornadoRidgeHeightWorld: 0.07,
     pockets: [
       { label: 'Wide Pocket A', angleDegrees: 150, widthDegrees: 58, depthWorld: 1.2, kind: 'pocket' },
       { label: 'Wide Pocket B', angleDegrees: 30, widthDegrees: 58, depthWorld: 1.2, kind: 'pocket' },
@@ -130,6 +146,10 @@ export const STADIUM_PRESETS: StadiumPreset[] = [
     wallFriction: 0.105,
     floorFriction: 0.034,
     pocketGuardLengthWorld: 1.45,
+    bowlDepthWorld: 1.14,
+    bowlCurve: 2,
+    outerLipLiftWorld: 0.26,
+    tornadoRidgeHeightWorld: 0.095,
     pockets: [
       { label: 'Over Zone L', angleDegrees: 136, widthDegrees: 33, depthWorld: 1.15, kind: 'pocket' },
       { label: 'Xtreme Zone', angleDegrees: 180, widthDegrees: 48, depthWorld: 1.45, kind: 'xtreme' },

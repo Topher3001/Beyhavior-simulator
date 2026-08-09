@@ -22,7 +22,12 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { LoadedDesign, Vector3Mm } from '../model/types';
-import { setActiveStadiumPreset, type StadiumPreset } from '../simulation/stadiumConfig';
+import {
+  getActiveStadiumPreset,
+  setActiveStadiumPreset,
+  type StadiumPreset,
+} from '../simulation/stadiumConfig';
+import { getStadiumSurfaceYAt } from '../simulation/stadiumSurface';
 import type { BattleSide, SimulationTransform } from '../simulation/types';
 import { createArena } from './createArena';
 import { createTestTop } from './createTestTop';
@@ -56,8 +61,8 @@ export function createScene(container: HTMLElement): SimulatorScene {
 
   const camera = new PerspectiveCamera(48, 1, 0.1, 100);
   camera.name = 'MainCamera';
-  camera.position.set(7.8, 5.2, 8.4);
-  camera.lookAt(new Vector3(0, 0.75, 0));
+  camera.position.set(7.8, 3.6, 8.4);
+  camera.lookAt(new Vector3(0, -0.08, 0));
 
   const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -69,7 +74,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.target.set(0, 0.65, 0);
+  controls.target.set(0, -0.08, 0);
   controls.maxPolarAngle = Math.PI * 0.48;
   controls.minDistance = 4;
   controls.maxDistance = 18;
@@ -93,10 +98,12 @@ export function createScene(container: HTMLElement): SimulatorScene {
   keyLight.shadow.camera.bottom = -7;
   scene.add(keyLight);
 
-  let arena = createArena();
+  let activeStadium = getActiveStadiumPreset();
+  let arena = createArena(activeStadium);
   scene.add(arena);
 
   const testTop = createTestTop();
+  alignDemoTopToStadium();
   scene.add(testTop.object);
 
   let importedDesignObject: Object3D | null = null;
@@ -262,11 +269,19 @@ export function createScene(container: HTMLElement): SimulatorScene {
   const setDefaultCameraView = () => {
     camera.near = 0.1;
     camera.far = 100;
-    camera.position.set(7.8, 5.2, 8.4);
+    camera.position.set(7.8, 3.6, 8.4);
     camera.updateProjectionMatrix();
-    controls.target.set(0, 0.65, 0);
+    controls.target.set(0, -0.08, 0);
     controls.update();
   };
+
+  function alignDemoTopToStadium(): void {
+    testTop.object.position.y = getStadiumSurfaceYAt(0, 0, activeStadium) + 0.1;
+  }
+
+  function getPreviewYOffset(x: number, z: number): number {
+    return getStadiumSurfaceYAt(x, z, activeStadium) - ARENA_SURFACE_Y;
+  }
 
   return {
     start: () => {
@@ -275,10 +290,26 @@ export function createScene(container: HTMLElement): SimulatorScene {
     },
     setStadiumPreset: (presetId) => {
       const preset = setActiveStadiumPreset(presetId);
+      activeStadium = preset;
       scene.remove(arena);
       disposeObject(arena);
       arena = createArena(preset);
       scene.add(arena);
+      alignDemoTopToStadium();
+
+      if (importedDesignObject && !isSimulationModeActive) {
+        importedDesignObject.position.y = getPreviewYOffset(0, 0);
+      }
+
+      for (const side of Object.keys(battleDesignObjects) as BattleSide[]) {
+        const object = battleDesignObjects[side];
+
+        if (object && !isSimulationModeActive) {
+          const x = side === 'left' ? -1.4 : 1.4;
+          object.position.y = getPreviewYOffset(x, 0);
+        }
+      }
+
       renderScene();
 
       return preset;
@@ -292,6 +323,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
       const simulationAnchor = new Group();
       simulationAnchor.name = 'ImportedDesignSimulationAnchor';
       simulationAnchor.add(design.object);
+      simulationAnchor.position.y = getPreviewYOffset(0, 0);
 
       importedDesignObject = simulationAnchor;
       importedBoundsHelper = new BoxHelper(simulationAnchor, '#238fbd');
@@ -306,6 +338,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
       removeBattleDesigns();
       testTop.object.visible = true;
       testTop.object.rotation.set(0, 0, 0);
+      alignDemoTopToStadium();
       thumbnailTarget = testTop.object;
       setDefaultCameraView();
       renderScene();
@@ -350,8 +383,8 @@ export function createScene(container: HTMLElement): SimulatorScene {
 
       const leftAnchor = createBattleAnchor('left', left);
       const rightAnchor = createBattleAnchor('right', right);
-      leftAnchor.position.set(-1.4, 0, 0);
-      rightAnchor.position.set(1.4, 0, 0);
+      leftAnchor.position.set(-1.4, getPreviewYOffset(-1.4, 0), 0);
+      rightAnchor.position.set(1.4, getPreviewYOffset(1.4, 0), 0);
 
       battleDesignObjects = {
         left: leftAnchor,
@@ -408,7 +441,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
 
       marker.position.set(
         offsetMm.x * designScale,
-        ARENA_SURFACE_Y + offsetMm.y * designScale,
+        getStadiumSurfaceYAt(0, 0, activeStadium) + offsetMm.y * designScale,
         offsetMm.z * designScale,
       );
       marker.visible = !isSimulationModeActive;

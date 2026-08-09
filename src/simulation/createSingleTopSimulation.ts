@@ -94,7 +94,7 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
     applyProfileDamping(topBody, currentProfile, proxyGeometry, deltaSeconds);
     applyWobbleTorque(topBody, proxyGeometry);
     world.step();
-    stabilizeTopGroundContact(topBody, proxyGeometry);
+    stabilizeTopGroundContact(topBody, proxyGeometry, deltaSeconds);
     applyArenaContainment(topBody, proxyGeometry);
     elapsedSeconds += deltaSeconds;
     telemetry = calculateTelemetry(topBody, telemetry.status, elapsedSeconds, telemetry.stopReason, telemetry.errorMessage);

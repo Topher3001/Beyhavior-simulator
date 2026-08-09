@@ -4,20 +4,21 @@ This note records the real-world references used for the current stadium and bui
 
 ## Stadium References
 
-The active default stadium is based on the Takara Tomy BB-10 Attack Type because it has published arena, ridge, wall, and exit-gap measurements.
+The active default stadium is the Takara Tomy Beyblade X Xtreme Stadium BX-10 because current Beyblade X competitive references describe it as the standard stadium. BB-10 remains available as a legacy reference stadium with well-published arena, ridge, wall, and exit-gap measurements.
 
 | Preset | In-App ID | Reference Dimensions | Sim Interpretation |
 | --- | --- | --- | --- |
-| BB-10 Attack Type | `bb10-attack-standard` | 34 cm diameter, 25 cm tornado ridge diameter, 15 cm exit gaps, 15.5 cm wall length, 3 cm depth | Default arena; three open KO gaps, segmented wall colliders, low-restitution floor/rim |
+| BB-10 Attack Type | `bb10-attack-standard` | 34 cm diameter, 25 cm tornado ridge diameter, 15 cm exit gaps, 15.5 cm wall length, 3 cm depth | Legacy reference arena; three open KO gaps, segmented wall colliders, low-restitution floor/rim |
 | Burst Standard Type B-09 | `burst-standard-b09` | Retail dimensions commonly listed around 45.7 x 45.7 x 10.2 cm; standard Burst stadium has inner ridge and three exits | Larger three-pocket variant for later selection work |
 | DB Standard Type B-183 | `db-standard-b183` | Approx. 54.5 cm length, 48 cm width, 16.5 cm height, 31.5 cm tornado ridge, two ring-out pockets | Wide two-pocket stadium with larger outer area |
-| Xtreme Stadium BX-10 | `xtreme-bx10` | Approx. 44 cm length, 45.5 cm width, 15.5 cm height, 21 cm tornado ridge, two over-zone pockets and one wide exit | X-style layout with grouped pockets on one side |
+| Xtreme Stadium BX-10 | `xtreme-bx10` | Approx. 44 cm length, 45.5 cm width, 15.5 cm height, 21 cm tornado ridge, two over-zone pockets and one wide exit | Default X-style arena with grouped pockets on one side |
 
 Current implementation files:
 
 - `src/simulation/stadiumConfig.ts` stores the measurements, derived world-scale dimensions, pocket arcs, rim friction, and floor friction.
-- `src/scene/createArena.ts` renders the active stadium with visible wall gaps, pocket guards, and a tornado ridge.
-- `src/simulation/physicsCore.ts` creates matching Rapier floor, ridge, wall, and pocket guard colliders.
+- `src/simulation/stadiumSurface.ts` generates the shared bowl height and slope profile used by rendering and physics.
+- `src/scene/createArena.ts` renders the active stadium as a bowl with stronger depth shading, a rounded outer lip, visible wall gaps, pocket guards, and a tornado ridge.
+- `src/simulation/physicsCore.ts` uses analytic bowl contact for the floor, plus Rapier ridge, wall, pocket guard, and bey proxy colliders.
 
 ## Built-In Test Beys
 
@@ -40,7 +41,7 @@ Implementation file:
 
 The simulator now distinguishes strike behavior from visual mesh shape with three editable values:
 
-- `attackPoints`: approximate number of contact lobes used by the battle proxy.
+- `attackPoints`: approximate number of contact lobes requested by the battle proxy. Runtime colliders are capped for responsiveness.
 - `attackBias`: moves strike colliders farther outward and makes the body feel less like a smooth disk.
 - `recoilCoefficient`: controls how lively side impacts feel while keeping restitution low enough to avoid trampoline behavior.
 

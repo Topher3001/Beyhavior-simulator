@@ -15,7 +15,7 @@ The simulator currently supports:
 - Editable physics profiles for saved designs, including weight, radius, height, center of mass, tip type, friction, damping, strike/contact shape, and launch defaults.
 - Live center-of-mass visualization and reusable tip and launch presets for faster tuning.
 - Single-top Rapier simulation with launch, pause, step, reset, telemetry, damping, wobble, stop detection, and replay traces.
-- Two-bey battle simulation with left/right design slots, contact-point proxy collisions, ring-out and stop detection, winner/draw results, and local result history.
+- Two-bey battle simulation with left/right design slots, simplified proxy collisions, ring-out and stop detection, winner/draw results, and local result history.
 - Results analysis with charts, replay controls, contact event markers, and profile JSON export/import.
 
 ## Running Locally
@@ -69,19 +69,22 @@ Each design gets a simplified physics proxy:
 - A dynamic rigid body with explicit mass properties.
 - A cylinder-like body collider.
 - A small tip collider for stadium contact.
-- A wider ring collider and configurable strike-point colliders in battle mode for bey-to-bey impacts.
+- A wider ring collider and a capped set of strike-point colliders in battle mode for bey-to-bey impacts.
 - Profile-driven friction, damping, center of mass, inertia estimate, launch RPM, launch angle, and launch position.
 
 This is intended to be stable and tunable rather than perfectly physically accurate.
 
 ## Stadium Behavior
 
-The arena uses a fixed floor collider, visible tornado ridge, segmented fixed rim colliders, and pocket openings based on reference stadium dimensions. Recent stability tuning prevents the stadium from behaving like a trampoline:
+The arena uses a visibly bowl-shaped floor mesh, a rounded lip, a visible tornado ridge, segmented fixed rim colliders, and pocket openings based on reference stadium dimensions. The floor itself is handled by a lightweight analytic bowl-height contact model instead of a Rapier trimesh collider, which keeps battles smoother while still making tops ride the selected stadium shape.
 
-- Floor and tip restitution are set to zero.
+- Tip restitution is set to zero, and floor contact is clamped by the analytic bowl surface.
+- Simulation launch height and ground-contact stabilization follow the selected bowl surface.
+- Bowl slope forces nudge tops inward as they climb the dish.
 - Rim, body, and battle-ring restitution are kept very low.
 - The broad body/ring collider is raised so normal spinning contact is primarily through the tip.
 - A ground-contact stabilizer caps upward velocity and prevents vertical energy runaway.
+- Battle contact markers are detected from proxy positions instead of high-volume Rapier collision events.
 - KO gaps and pocket openings are modeled as missing rim segments instead of a perfectly circular wall.
 
 If a top starts bouncing again, first check high launch angles, extreme center-of-mass offsets, very large radius/height values, or custom friction/damping settings.
