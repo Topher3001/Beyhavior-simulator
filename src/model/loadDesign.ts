@@ -1,6 +1,8 @@
 import {
   Box3,
+  BufferAttribute,
   BufferGeometry,
+  Color,
   Group,
   Material,
   Mesh,
@@ -16,11 +18,27 @@ const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 const TARGET_HORIZONTAL_SIZE = 2.4;
 const ARENA_SURFACE_Y = 0.1;
 
-const defaultImportedMaterial = new MeshStandardMaterial({
-  color: '#9fb8c8',
-  metalness: 0.16,
-  roughness: 0.46,
-});
+const generatedMaterialBase = {
+  color: '#f7fbff',
+  emissive: '#081014',
+  emissiveIntensity: 0.025,
+  metalness: 0.36,
+  roughness: 0.31,
+  vertexColors: true,
+};
+
+const generatedPalette = [
+  new Color('#d13f4b'),
+  new Color('#2f8fbd'),
+  new Color('#f2b705'),
+  new Color('#f5f0df'),
+];
+
+const lowerPalette = {
+  driver: new Color('#263038'),
+  shadow: new Color('#11181d'),
+  accent: new Color('#f2b705'),
+};
 
 export async function loadDesignFile(file: File, upAxis: UpAxis): Promise<LoadedDesign> {
   validateFile(file);
@@ -91,8 +109,9 @@ async function parseStlFile(file: File): Promise<Group> {
   }
 
   geometry.computeVertexNormals();
+  applyGeneratedVertexColors(geometry, 0);
 
-  const mesh = new Mesh(geometry, defaultImportedMaterial.clone());
+  const mesh = new Mesh(geometry, createGeneratedImportedMaterial());
   mesh.name = 'ImportedSTLMesh';
 
   const group = new Group();
@@ -162,6 +181,8 @@ function normalizeImportedObject(sourceObject: Group, upAxis: UpAxis): { object:
 }
 
 function prepareImportedObject(object: Object3D): void {
+  let meshIndex = 0;
+
   object.traverse((child) => {
     if (!isMesh(child)) {
       return;
@@ -170,10 +191,66 @@ function prepareImportedObject(object: Object3D): void {
     child.castShadow = true;
     child.receiveShadow = true;
 
-    if (!child.material || isEmptyMaterialArray(child.material)) {
-      child.material = defaultImportedMaterial.clone();
+    if (shouldApplyGeneratedStyle(child.material)) {
+      child.geometry.computeVertexNormals();
+      applyGeneratedVertexColors(child.geometry, meshIndex);
+      child.material = createGeneratedImportedMaterial();
     }
+
+    meshIndex += 1;
   });
+}
+
+function createGeneratedImportedMaterial(): MeshStandardMaterial {
+  return new MeshStandardMaterial(generatedMaterialBase);
+}
+
+function applyGeneratedVertexColors(geometry: BufferGeometry, seed: number): void {
+  const position = geometry.getAttribute('position');
+
+  if (!position) {
+    return;
+  }
+
+  geometry.computeBoundingBox();
+
+  const bounds = geometry.boundingBox;
+
+  if (!bounds) {
+    return;
+  }
+
+  const center = bounds.getCenter(new Vector3());
+  const size = bounds.getSize(new Vector3());
+  const maxRadius = Math.max(size.x, size.z, 0.001) / 2;
+  const height = Math.max(size.y, 0.001);
+  const colors = new Float32Array(position.count * 3);
+  const workingColor = new Color();
+
+  for (let index = 0; index < position.count; index += 1) {
+    const x = position.getX(index);
+    const y = position.getY(index);
+    const z = position.getZ(index);
+    const yNorm = (y - bounds.min.y) / height;
+    const radiusNorm = Math.min(Math.hypot(x - center.x, z - center.z) / maxRadius, 1);
+    const angle = Math.atan2(z - center.z, x - center.x) + seed * 0.85;
+    const sector = Math.abs(Math.floor(((angle + Math.PI) / (Math.PI * 2)) * generatedPalette.length)) % generatedPalette.length;
+
+    if (yNorm < 0.16) {
+      workingColor.copy(lowerPalette.driver).lerp(lowerPalette.shadow, radiusNorm * 0.45);
+    } else if (yNorm < 0.28) {
+      workingColor.copy(lowerPalette.accent).lerp(generatedPalette[sector], 0.28);
+    } else {
+      const stripe = Math.sin(angle * 4 + yNorm * Math.PI * 3) > 0 ? sector : (sector + 1) % generatedPalette.length;
+      workingColor.copy(generatedPalette[stripe]).lerp(new Color('#ffffff'), 0.08 + yNorm * 0.1);
+    }
+
+    colors[index * 3] = workingColor.r;
+    colors[index * 3 + 1] = workingColor.g;
+    colors[index * 3 + 2] = workingColor.b;
+  }
+
+  geometry.setAttribute('color', new BufferAttribute(colors, 3));
 }
 
 function getObjectDimensions(object: Object3D): Dimensions {
@@ -221,4 +298,41 @@ function isMesh(object: Object3D): object is Mesh {
 
 function isEmptyMaterialArray(material: Material | Material[]): boolean {
   return Array.isArray(material) && material.length === 0;
+}
+
+function shouldApplyGeneratedStyle(material: Material | Material[] | undefined): boolean {
+  if (!material || isEmptyMaterialArray(material)) {
+    return true;
+  }
+
+  if (Array.isArray(material)) {
+    return material.every(isPlainGeneratedCandidate);
+  }
+
+  return isPlainGeneratedCandidate(material);
+}
+
+function isPlainGeneratedCandidate(material: Material): boolean {
+  const maybeColored = material as Material & { color?: Color; map?: unknown };
+
+  if (maybeColored.map) {
+    return false;
+  }
+
+  if (material.name && !material.name.toLowerCase().includes('default')) {
+    return false;
+  }
+
+  if (!maybeColored.color) {
+    return false;
+  }
+
+  const hsl = {
+    h: 0,
+    s: 0,
+    l: 0,
+  };
+  maybeColored.color.getHSL(hsl);
+
+  return hsl.s < 0.14;
 }

@@ -109,19 +109,34 @@ export function getNearestTraceSample(trace: SimulationTrace, elapsedSeconds: nu
     return null;
   }
 
-  let nearest = trace.samples[0];
-  let nearestDistance = Math.abs(nearest.elapsedSeconds - elapsedSeconds);
+  let low = 0;
+  let high = trace.samples.length - 1;
 
-  for (const sample of trace.samples) {
-    const distance = Math.abs(sample.elapsedSeconds - elapsedSeconds);
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const sample = trace.samples[mid];
 
-    if (distance < nearestDistance) {
-      nearest = sample;
-      nearestDistance = distance;
+    if (sample.elapsedSeconds < elapsedSeconds) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
     }
   }
 
-  return nearest;
+  const before = trace.samples[Math.max(0, high)];
+  const after = trace.samples[Math.min(trace.samples.length - 1, low)];
+
+  if (!before) {
+    return after;
+  }
+
+  if (!after) {
+    return before;
+  }
+
+  return Math.abs(before.elapsedSeconds - elapsedSeconds) <= Math.abs(after.elapsedSeconds - elapsedSeconds)
+    ? before
+    : after;
 }
 
 export function getTraceSideSample(sample: SimulationTraceSample, side: BattleSide): TraceTopSample | undefined {

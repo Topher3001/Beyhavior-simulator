@@ -97,7 +97,6 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
     stabilizeTopGroundContact(topBody, proxyGeometry);
     applyArenaContainment(topBody, proxyGeometry);
     elapsedSeconds += deltaSeconds;
-    syncSceneTransform();
     telemetry = calculateTelemetry(topBody, telemetry.status, elapsedSeconds, telemetry.stopReason, telemetry.errorMessage);
     recordTraceSample();
     updateStopDetection(deltaSeconds);
@@ -213,6 +212,7 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
           status: nextStatus,
         };
         performStep(FIXED_TIMESTEP_SECONDS);
+        syncSceneTransform();
 
         if (telemetry.status !== 'stopped') {
           telemetry = {
@@ -253,6 +253,10 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
             accumulatorSeconds = 0;
             break;
           }
+        }
+
+        if (steps > 0) {
+          syncSceneTransform();
         }
       } catch (error) {
         fail(error);

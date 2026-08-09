@@ -6,16 +6,16 @@ The app is built with Vite, TypeScript, Three.js, IndexedDB, and Rapier 3D. Impo
 
 ## Current Status
 
-Implemented through Phase 7 of the project plan:
+The simulator currently supports:
 
-- Full-window Three.js scene with orbit controls and arena display.
-- STL and OBJ import for visual design files.
-- Local IndexedDB design library with save, load, rename, and delete.
-- Editable physics profiles for saved designs.
-- Center-of-mass marker and profile presets.
-- Single-top Rapier simulation with launch, pause, step, reset, telemetry, and replay traces.
-- Two-bey battle MVP with left/right slots, collisions, winner/draw detection, and basic result history.
-- Results tab with charts, replay controls, contact events, and profile JSON export/import.
+- A full-window 3D arena with orbit camera controls, lighting, and a visible stadium boundary.
+- STL and OBJ imports for visual Beyblade design files, including centering, scaling, bounds display, and thumbnails.
+- A local design library using IndexedDB, with save, load, rename, and delete actions.
+- Editable physics profiles for saved designs, including weight, radius, height, center of mass, tip type, friction, damping, and launch defaults.
+- Live center-of-mass visualization and reusable tip and launch presets for faster tuning.
+- Single-top Rapier simulation with launch, pause, step, reset, telemetry, damping, wobble, stop detection, and replay traces.
+- Two-bey battle simulation with left/right design slots, simplified collisions, ring-out and stop detection, winner/draw results, and local result history.
+- Results analysis with charts, replay controls, contact event markers, and profile JSON export/import.
 
 ## Running Locally
 

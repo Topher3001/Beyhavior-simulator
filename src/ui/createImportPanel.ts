@@ -42,6 +42,8 @@ import {
 type StatusTone = 'idle' | 'loading' | 'success' | 'error';
 type DesignTab = 'import' | 'library' | 'physics' | 'sim' | 'battle' | 'results';
 
+const LIVE_TELEMETRY_INTERVAL_SECONDS = 1 / 12;
+
 type ActiveDesignState = {
   design: LoadedDesign;
   fileBlob: Blob;
@@ -71,6 +73,9 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   let battleResults: BattleResult[] = [];
   let savedBattleResultKey: string | null = null;
   let latestTrace: SimulationTrace | null = null;
+  let latestTraceCacheKey: string | null = null;
+  let simulationTelemetryAccumulatorSeconds = 0;
+  let battleTelemetryAccumulatorSeconds = 0;
   let replayState = {
     playing: false,
     timeSeconds: 0,
@@ -222,7 +227,10 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   };
 
   const renderResults = () => {
-    renderTraceResults(latestTrace, elements, elements.resultsMetric.value as SimulationMetric);
+    if (!elements.resultsPane.hidden) {
+      renderTraceResults(latestTrace, elements, elements.resultsMetric.value as SimulationMetric);
+    }
+
     updateResultsControls();
   };
 
@@ -231,11 +239,29 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       return;
     }
 
+    const cacheKey = `${trace.id}:${trace.samples.length}:${trace.resultLabel ?? ''}`;
+
+    if (cacheKey === latestTraceCacheKey) {
+      return;
+    }
+
+    latestTraceCacheKey = cacheKey;
     latestTrace = trace;
     replayState.timeSeconds = getTraceDuration(trace);
     elements.replayTimeline.max = String(Math.max(replayState.timeSeconds, 0));
     elements.replayTimeline.value = String(replayState.timeSeconds);
     setResultsStatus(`${trace.label} recorded.`, 'success');
+    renderResults();
+  };
+
+  const clearLatestTrace = (message: string, tone: StatusTone) => {
+    latestTrace = null;
+    latestTraceCacheKey = null;
+    replayState.playing = false;
+    replayState.timeSeconds = 0;
+    elements.replayTimeline.max = '0';
+    elements.replayTimeline.value = '0';
+    setResultsStatus(message, tone);
     renderResults();
   };
 
@@ -318,7 +344,6 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       });
     }
 
-    renderResults();
   };
 
   const setBattleUnavailable = (message: string) => {
@@ -498,8 +523,11 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
 
   const launchBattle = async () => {
     await prepareBattleForSlots();
+    stopReplay();
+    clearLatestTrace('Recording battle. Results update when paused or stopped.', 'loading');
     battleSimulation?.launch();
     lastBattleStatus = null;
+    battleTelemetryAccumulatorSeconds = LIVE_TELEMETRY_INTERVAL_SECONDS;
     savedBattleResultKey = null;
     renderBattleTelemetry();
   };
@@ -1056,10 +1084,15 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       singleTopSimulation.update(deltaSeconds * readNumber(elements.simTimeScale));
 
       const telemetry = singleTopSimulation.getTelemetry();
-      renderSimulationTelemetry(telemetry);
-      syncLatestTrace(singleTopSimulation.getTrace());
+      const statusChanged = telemetry.status !== lastSimulationStatus;
+      simulationTelemetryAccumulatorSeconds += deltaSeconds;
 
-      if (telemetry.status !== lastSimulationStatus) {
+      if (statusChanged || (telemetry.status === 'running' && simulationTelemetryAccumulatorSeconds >= LIVE_TELEMETRY_INTERVAL_SECONDS)) {
+        renderSimulationTelemetry(telemetry);
+        simulationTelemetryAccumulatorSeconds = 0;
+      }
+
+      if (statusChanged) {
         if (telemetry.status === 'running') {
           setSimulationStatus('Simulation running.', 'loading');
         } else if (telemetry.status === 'stopped') {
@@ -1074,6 +1107,10 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
 
         lastSimulationStatus = telemetry.status;
         syncCenterOfMassMarker();
+
+        if (telemetry.status !== 'running') {
+          syncLatestTrace(singleTopSimulation.getTrace());
+        }
       }
     }
 
@@ -1081,10 +1118,15 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       battleSimulation.update(deltaSeconds * readNumber(elements.battleTimeScale));
 
       const telemetry = battleSimulation.getTelemetry();
-      renderBattleTelemetry(telemetry);
-      syncLatestTrace(battleSimulation.getTrace());
+      const statusChanged = telemetry.status !== lastBattleStatus;
+      battleTelemetryAccumulatorSeconds += deltaSeconds;
 
-      if (telemetry.status !== lastBattleStatus) {
+      if (statusChanged || (telemetry.status === 'running' && battleTelemetryAccumulatorSeconds >= LIVE_TELEMETRY_INTERVAL_SECONDS)) {
+        renderBattleTelemetry(telemetry);
+        battleTelemetryAccumulatorSeconds = 0;
+      }
+
+      if (statusChanged) {
         if (telemetry.status === 'running') {
           setBattleStatus('Battle running.', 'loading');
         } else if (telemetry.status === 'stopped') {
@@ -1099,6 +1141,10 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
         }
 
         lastBattleStatus = telemetry.status;
+
+        if (telemetry.status !== 'running') {
+          syncLatestTrace(battleSimulation.getTrace());
+        }
       }
     }
   });
@@ -1143,8 +1189,10 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   });
   elements.simLaunchButton.addEventListener('click', () => {
     stopReplay();
+    clearLatestTrace('Recording simulation. Results update when paused or stopped.', 'loading');
     singleTopSimulation?.launch();
     lastSimulationStatus = null;
+    simulationTelemetryAccumulatorSeconds = LIVE_TELEMETRY_INTERVAL_SECONDS;
     renderSimulationTelemetry();
     syncCenterOfMassMarker();
   });
@@ -1166,6 +1214,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     singleTopSimulation?.step();
     lastSimulationStatus = null;
     renderSimulationTelemetry();
+    syncLatestTrace(singleTopSimulation?.getTrace() ?? null);
     syncCenterOfMassMarker();
   });
   elements.simResetButton.addEventListener('click', () => {
@@ -1208,6 +1257,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     battleSimulation?.step();
     lastBattleStatus = null;
     renderBattleTelemetry();
+    syncLatestTrace(battleSimulation?.getTrace() ?? null);
   });
   elements.battleResetButton.addEventListener('click', () => {
     stopReplay();
@@ -1223,8 +1273,10 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     }
 
     stopReplay();
+    clearLatestTrace('Recording battle. Results update when paused or stopped.', 'loading');
     battleSimulation?.launch();
     lastBattleStatus = null;
+    battleTelemetryAccumulatorSeconds = LIVE_TELEMETRY_INTERVAL_SECONDS;
     savedBattleResultKey = null;
     renderBattleTelemetry();
   });

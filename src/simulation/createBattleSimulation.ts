@@ -144,7 +144,6 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
     }
 
     elapsedSeconds += deltaSeconds;
-    syncSceneTransforms();
     updateFailureDetection(deltaSeconds);
     telemetry = calculateBattleTelemetry(telemetry.status, elapsedSeconds, topStates, telemetry.winner, telemetry.resultReason, telemetry.errorMessage);
     recordTraceSample();
@@ -383,6 +382,7 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
           status: nextStatus,
         };
         performStep(FIXED_TIMESTEP_SECONDS);
+        syncSceneTransforms();
 
         if (telemetry.status !== 'stopped') {
           telemetry = {
@@ -423,6 +423,10 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
             accumulatorSeconds = 0;
             break;
           }
+        }
+
+        if (steps > 0) {
+          syncSceneTransforms();
         }
       } catch (error) {
         fail(error);

@@ -136,7 +136,10 @@ export function createScene(container: HTMLElement): SimulatorScene {
     }
 
     frameUpdate?.(delta, elapsed);
-    importedBoundsHelper?.update();
+    if (importedBoundsHelper?.visible) {
+      importedBoundsHelper.update();
+    }
+
     controls.update();
     renderScene();
     animationFrameId = window.requestAnimationFrame(render);
@@ -310,8 +313,9 @@ export function createScene(container: HTMLElement): SimulatorScene {
         transform.quaternion.z,
         transform.quaternion.w,
       );
-      importedBoundsHelper?.update();
-      renderScene();
+      if (importedBoundsHelper?.visible) {
+        importedBoundsHelper.update();
+      }
     },
     setSimulationMode: (active) => {
       isSimulationModeActive = active;
@@ -364,8 +368,11 @@ export function createScene(container: HTMLElement): SimulatorScene {
         transform.quaternion.z,
         transform.quaternion.w,
       );
-      battleBoundsHelpers.forEach((helper) => helper.update());
-      renderScene();
+      battleBoundsHelpers.forEach((helper) => {
+        if (helper.visible) {
+          helper.update();
+        }
+      });
     },
     setBattleMode: (active) => {
       isSimulationModeActive = active;
