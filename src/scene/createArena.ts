@@ -38,6 +38,8 @@ export function createArena(stadium = getActiveStadiumPreset()): Group {
   floor.receiveShadow = true;
   arena.add(floor);
 
+  addOuterBowlShell(arena, stadium);
+
   const rimMaterial = new MeshStandardMaterial({
     color: stadium.id === 'xtreme-bx10' ? '#3ba861' : '#51616f',
     metalness: 0.18,
@@ -119,6 +121,21 @@ function addOuterLipRing(arena: Group, material: MeshStandardMaterial, stadium: 
   arena.add(lip);
 }
 
+function addOuterBowlShell(arena: Group, stadium: StadiumPreset): void {
+  const shellMaterial = new MeshStandardMaterial({
+    color: stadium.id === 'xtreme-bx10' ? '#7aa883' : '#8797a1',
+    metalness: 0.04,
+    opacity: 0.42,
+    roughness: 0.72,
+    side: DoubleSide,
+    transparent: true,
+  });
+  const shell = new Mesh(createOuterBowlShellGeometry(stadium), shellMaterial);
+  shell.name = 'ArenaOuterBowlShell';
+  shell.receiveShadow = true;
+  arena.add(shell);
+}
+
 function addPocketGuards(arena: Group, material: MeshStandardMaterial, stadium: StadiumPreset): void {
   const wallSurfaceY = getStadiumSurfaceYByProgress(1, stadium);
 
@@ -160,6 +177,40 @@ function createDishFloorGeometry(stadium: StadiumPreset): BufferGeometry {
   return geometry;
 }
 
+function createOuterBowlShellGeometry(stadium: StadiumPreset): BufferGeometry {
+  const segmentCount = 192;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const radius = stadium.playRadiusWorld + 0.075;
+  const topY = getStadiumSurfaceYByProgress(1, stadium) + 0.02;
+  const bottomY = getStadiumSurfaceYByProgress(0, stadium) - 0.16;
+
+  for (let segment = 0; segment < segmentCount; segment += 1) {
+    const angle = (segment / segmentCount) * Math.PI * 2;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+
+    positions.push(x, topY, z, x, bottomY, z);
+  }
+
+  for (let segment = 0; segment < segmentCount; segment += 1) {
+    const nextSegment = (segment + 1) % segmentCount;
+    const topA = segment * 2;
+    const bottomA = topA + 1;
+    const topB = nextSegment * 2;
+    const bottomB = topB + 1;
+
+    indices.push(topA, bottomA, topB, bottomA, bottomB, topB);
+  }
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  geometry.setIndex(new BufferAttribute(new Uint32Array(indices), 1));
+  geometry.computeVertexNormals();
+
+  return geometry;
+}
+
 function addBowlContourRings(arena: Group, stadium: StadiumPreset): void {
   const ringMaterial = new MeshStandardMaterial({
     color: stadium.id === 'xtreme-bx10' ? '#8fba9a' : '#9eb1bc',
@@ -180,12 +231,14 @@ function addBowlContourRings(arena: Group, stadium: StadiumPreset): void {
 
 function createDishVertexColors(vertices: Float32Array, stadium: StadiumPreset): Float32Array {
   const colors = new Float32Array((vertices.length / 3) * 3);
-  const centerColor = new Color(stadium.id === 'xtreme-bx10' ? '#b9cabc' : '#aebcc4');
-  const midColor = new Color(stadium.id === 'xtreme-bx10' ? '#eef7ef' : '#e4ebee');
+  const centerColor = new Color(stadium.id === 'xtreme-bx10' ? '#8fb69a' : '#8fa4ae');
+  const midColor = new Color(stadium.id === 'xtreme-bx10' ? '#dbece0' : '#dce6ea');
   const rimColor = new Color(stadium.id === 'xtreme-bx10' ? '#fbfffb' : '#f8fbfc');
   const ridgeColor = new Color(stadium.id === 'xtreme-bx10' ? '#79be86' : '#9fb4bf');
   const workingColor = new Color();
   const ridgeProgress = stadium.tornadoRidgeRadiusWorld / stadium.playRadiusWorld;
+  const centerY = getStadiumSurfaceYByProgress(0, stadium);
+  const rimY = getStadiumSurfaceYByProgress(1, stadium);
 
   for (let index = 0; index < vertices.length; index += 3) {
     const vertexIndex = index / 3;
@@ -194,10 +247,10 @@ function createDishVertexColors(vertices: Float32Array, stadium: StadiumPreset):
     const z = vertices[index + 2];
     const progress = Math.min(Math.hypot(x, z) / stadium.playRadiusWorld, 1);
     const edgeMix = Math.max(0, (progress - 0.66) / 0.34);
-    const heightMix = Math.max(0, Math.min((y - (0.1 - stadium.bowlDepthWorld)) / stadium.bowlDepthWorld, 1));
+    const heightMix = Math.max(0, Math.min((y - centerY) / Math.max(rimY - centerY, 0.001), 1));
 
     workingColor.copy(centerColor).lerp(midColor, Math.min(progress * 1.25, 1));
-    workingColor.lerp(rimColor, edgeMix * 0.65);
+    workingColor.lerp(rimColor, edgeMix * 0.82);
 
     if (Math.abs(progress - ridgeProgress) < 0.035) {
       workingColor.lerp(ridgeColor, 0.65);

@@ -8,16 +8,20 @@ import {
   STOP_DURATION_SECONDS,
   STOP_RPM_THRESHOLD,
   applyArenaContainment,
+  applyGyroscopicStability,
   applyProfileDamping,
   applyWobbleTorque,
   calculateTopTelemetry,
   createArenaColliders,
   createProxyGeometry,
   createTopRigidBody,
+  decaySpinCeilingRpm,
   getBodyTransform,
   getRingOutCandidateReason,
   getStopCandidateReason,
+  limitTopAngularVelocity,
   stabilizeTopGroundContact,
+  updateVisualSpinRadians,
   type ProxyGeometry,
   type RapierRigidBody,
   type RapierRuntime,
@@ -44,6 +48,9 @@ type BattleTopState = {
   ringOutCandidateSeconds: number;
   failureTime: number | null;
   failureReason: SimulationStopReason;
+  visualSpinRadians: number;
+  spinDirection: 1 | -1;
+  spinCeilingRpm: number;
 };
 
 const SIDES: BattleSide[] = ['left', 'right'];
@@ -113,6 +120,7 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
 
       applyProfileDamping(state.body, state.slot.profile, state.proxyGeometry, deltaSeconds);
       applyWobbleTorque(state.body, state.proxyGeometry);
+      applyGyroscopicStability(state.body, state.proxyGeometry, deltaSeconds);
     }
 
     world.step();
@@ -122,8 +130,12 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
       const state = topStates[side];
 
       if (state) {
-        stabilizeTopGroundContact(state.body, state.proxyGeometry, deltaSeconds);
         applyArenaContainment(state.body, state.proxyGeometry);
+        stabilizeTopGroundContact(state.body, state.proxyGeometry, deltaSeconds);
+        applyGyroscopicStability(state.body, state.proxyGeometry, deltaSeconds);
+        state.spinCeilingRpm = decaySpinCeilingRpm(state.spinCeilingRpm, state.slot.profile, state.proxyGeometry, deltaSeconds);
+        limitTopAngularVelocity(state.body, state.spinDirection, state.spinCeilingRpm);
+        state.visualSpinRadians = updateVisualSpinRadians(state.body, state.visualSpinRadians, deltaSeconds, state.spinDirection);
       }
     }
 
@@ -139,7 +151,7 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
       const state = topStates[side];
 
       if (state) {
-        simulatorScene.setBattleTransform(side, getBodyTransform(state.body));
+        simulatorScene.setBattleTransform(side, getBodyTransform(state.body, state.visualSpinRadians));
       }
     }
   };
@@ -243,11 +255,11 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
       elapsedSeconds,
       {
         telemetry: getTopTelemetry(topStates.left),
-        transform: getBodyTransform(topStates.left.body),
+        transform: getBodyTransform(topStates.left.body, topStates.left.visualSpinRadians),
       },
       {
         telemetry: getTopTelemetry(topStates.right),
-        transform: getBodyTransform(topStates.right.body),
+        transform: getBodyTransform(topStates.right.body, topStates.right.visualSpinRadians),
       },
     );
   };
@@ -446,6 +458,9 @@ function createBattleTopState(
     ringOutCandidateSeconds: 0,
     failureTime: null,
     failureReason: null,
+    visualSpinRadians: 0,
+    spinDirection: 1,
+    spinCeilingRpm: withLaunchVelocity ? slot.launchSettings.rpm : 0,
   };
 }
 

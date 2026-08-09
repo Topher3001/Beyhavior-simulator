@@ -60,16 +60,18 @@ export function getStadiumSurfaceGradientAt(x: number, z: number, stadium: Stadi
 
 export function getStadiumSurfaceYByProgress(radiusProgress: number, stadium: StadiumPreset): number {
   const clampedProgress = Math.max(0, Math.min(radiusProgress, 1.25));
-  const bowlDepth = stadium.bowlDepthWorld;
-  const liftedEdge = ARENA_SURFACE_Y + stadium.outerLipLiftWorld;
   const playableProgress = Math.min(clampedProgress, 1);
-  const bowlProgress = smoothstep(0.06, 1, playableProgress) ** stadium.bowlCurve;
-  const baseY = liftedEdge - bowlDepth * (1 - bowlProgress);
+  const centerY = ARENA_SURFACE_Y - stadium.bowlDepthWorld * 0.72;
+  const rimY = ARENA_SURFACE_Y + stadium.outerLipLiftWorld;
+  const innerRise = Math.pow(smoothstep(0, 0.72, playableProgress), 1.05 + stadium.bowlCurve * 0.22);
+  const outerBank = Math.pow(smoothstep(0.62, 1, playableProgress), 1.55);
+  const bowlProgress = Math.min(innerRise * 0.46 + outerBank * 0.54, 1);
+  const baseY = centerY + (rimY - centerY) * bowlProgress;
   const ridgeProgress = stadium.tornadoRidgeRadiusWorld / stadium.playRadiusWorld;
-  const ridgeWidth = 0.052;
+  const ridgeWidth = 0.046;
   const ridgeLift = Math.max(0, 1 - Math.abs(clampedProgress - ridgeProgress) / ridgeWidth) * stadium.tornadoRidgeHeightWorld;
   const outerLipProgress = smoothstep(1, 1.2, clampedProgress);
-  const outerLipLift = outerLipProgress * stadium.outerLipLiftWorld * 0.55;
+  const outerLipLift = outerLipProgress * stadium.outerLipLiftWorld * 0.85;
 
   return baseY + ridgeLift + outerLipLift;
 }

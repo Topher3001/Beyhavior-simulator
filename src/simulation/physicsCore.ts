@@ -61,17 +61,21 @@ export type TopRigidBodyOptions = {
 
 export const ARENA_SURFACE_Y = STADIUM_SURFACE_Y;
 export const FIXED_TIMESTEP_SECONDS = 1 / 90;
-export const MAX_ACCUMULATED_SECONDS = 1 / 10;
-export const MAX_STEPS_PER_FRAME = 4;
+export const MAX_ACCUMULATED_SECONDS = 1 / 4;
+export const MAX_STEPS_PER_FRAME = 18;
 export const STOP_RPM_THRESHOLD = 120;
 export const STOP_TILT_DEGREES = 75;
 export const STOP_DURATION_SECONDS = 1.25;
 export const RING_OUT_DURATION_SECONDS = 0.5;
 export const DRAW_WINDOW_SECONDS = 0.75;
 
-const MAX_HORIZONTAL_SPEED = 3;
+const MAX_HORIZONTAL_SPEED = 2.35;
 const MAX_UPWARD_SPEED = 0.28;
-const BOWL_SLOPE_ACCELERATION_SCALE = 0.42;
+const MAX_SPIN_RPM = 12500;
+const MAX_TUMBLE_RADIANS_PER_SECOND = 12;
+const MAX_VISUAL_SPIN_RPM = 480;
+const BOWL_SLOPE_ACCELERATION_SCALE = 0.22;
+const CONTACT_CLEARANCE = 0.006;
 const WORLD_UP = new Vector3(0, 1, 0);
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
 
@@ -177,8 +181,8 @@ export function createTopRigidBody(
       withLaunchVelocity ? launchSettings.linearVelocity?.z ?? 0 : 0,
     )
     .setAngvel(withLaunchVelocity ? getLaunchAngularVelocity(launchSettings, launchRotation, options.spinDirection ?? 1) : { x: 0, y: 0, z: 0 })
-    .setLinearDamping(Math.min(3, 0.08 + profile.airDragCoefficient * 0.75))
-    .setAngularDamping(Math.min(5, 0.05 + profile.spinDampingCoefficient * 0.45))
+    .setLinearDamping(Math.min(1.2, 0.025 + profile.airDragCoefficient * 0.35))
+    .setAngularDamping(Math.min(1, 0.006 + profile.spinDampingCoefficient * 0.08))
     .setAdditionalMassProperties(
       proxyGeometry.massKg,
       {
@@ -235,7 +239,7 @@ export function getLaunchSettingsFromProfile(profile: PhysicsProfile, position =
 
 export function applyProfileDamping(body: RapierRigidBody, profile: PhysicsProfile, proxyGeometry: ProxyGeometry, deltaSeconds: number): void {
   const linearVelocity = body.linvel();
-  const horizontalDrag = Math.exp(-(0.04 + profile.airDragCoefficient * 2.8 + proxyGeometry.tipFriction * 0.025) * deltaSeconds);
+  const horizontalDrag = Math.exp(-(0.025 + profile.airDragCoefficient * 1.2 + proxyGeometry.tipFriction * 0.01) * deltaSeconds);
   const horizontalVelocity = new Vector3(linearVelocity.x * horizontalDrag, 0, linearVelocity.z * horizontalDrag);
 
   if (horizontalVelocity.length() > MAX_HORIZONTAL_SPEED) {
@@ -245,8 +249,8 @@ export function applyProfileDamping(body: RapierRigidBody, profile: PhysicsProfi
   body.setLinvel({ x: horizontalVelocity.x, y: linearVelocity.y, z: horizontalVelocity.z }, true);
 
   const angularVelocity = body.angvel();
-  const spinLoss = Math.exp(-(0.18 + profile.spinDampingCoefficient * 10 + proxyGeometry.tipFriction * 0.04) * deltaSeconds);
-  const tumbleLoss = Math.exp(-(0.5 + profile.airDragCoefficient * 1.5 + profile.spinDampingCoefficient * 4) * deltaSeconds);
+  const spinLoss = Math.exp(-(0.015 + profile.spinDampingCoefficient * 0.85 + proxyGeometry.tipFriction * 0.004) * deltaSeconds);
+  const tumbleLoss = Math.exp(-(0.32 + profile.airDragCoefficient * 0.9 + profile.spinDampingCoefficient * 1.6) * deltaSeconds);
   body.setAngvel(
     {
       x: angularVelocity.x * tumbleLoss,
@@ -255,6 +259,12 @@ export function applyProfileDamping(body: RapierRigidBody, profile: PhysicsProfi
     },
     true,
   );
+}
+
+export function decaySpinCeilingRpm(currentRpm: number, profile: PhysicsProfile, proxyGeometry: ProxyGeometry, deltaSeconds: number): number {
+  const spinDecayRate = 0.01 + profile.spinDampingCoefficient * 0.7 + proxyGeometry.tipFriction * 0.002;
+
+  return Math.max(0, currentRpm * Math.exp(-spinDecayRate * deltaSeconds));
 }
 
 export function applyWobbleTorque(body: RapierRigidBody, proxyGeometry: ProxyGeometry): void {
@@ -273,6 +283,85 @@ export function applyWobbleTorque(body: RapierRigidBody, proxyGeometry: ProxyGeo
       x: proxyGeometry.centerOfMassWorld.z * offsetTorqueScale,
       y: 0,
       z: -proxyGeometry.centerOfMassWorld.x * offsetTorqueScale,
+    },
+    true,
+  );
+}
+
+export function applyGyroscopicStability(body: RapierRigidBody, proxyGeometry: ProxyGeometry, deltaSeconds: number): void {
+  const rotation = body.rotation();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocity = body.angvel();
+  const angularVelocityVector = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z);
+  const spinRadiansPerSecond = angularVelocityVector.dot(bodyUp);
+  const spinRpm = Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
+  const stability = clamp((spinRpm - 250) / 6500, 0, 1);
+
+  if (stability <= 0) {
+    return;
+  }
+
+  const spinVector = bodyUp.clone().multiplyScalar(spinRadiansPerSecond);
+  const tumbleVelocity = angularVelocityVector.sub(spinVector);
+  const tumbleDamping = Math.exp(-(1.8 + stability * 10.5) * deltaSeconds);
+  const stabilizedAngularVelocity = spinVector.add(tumbleVelocity.multiplyScalar(tumbleDamping));
+
+  body.setAngvel(
+    {
+      x: stabilizedAngularVelocity.x,
+      y: stabilizedAngularVelocity.y,
+      z: stabilizedAngularVelocity.z,
+    },
+    true,
+  );
+
+  const tiltAxis = new Vector3().crossVectors(bodyUp, WORLD_UP);
+
+  if (tiltAxis.lengthSq() <= 0.000001) {
+    return;
+  }
+
+  const tiltDegrees = radiansToDegrees(bodyUp.angleTo(WORLD_UP));
+  const rightingScale = proxyGeometry.massKg * 9.81 * Math.max(proxyGeometry.centerOfMassWorld.y, 0.04);
+  const rightingTorque = rightingScale * (0.45 + stability * 2.2) * Math.min(tiltDegrees / 42, 1);
+
+  tiltAxis.normalize().multiplyScalar(rightingTorque);
+  body.addTorque({ x: tiltAxis.x, y: 0, z: tiltAxis.z }, true);
+
+  if (tiltDegrees < 89.4) {
+    const correctionRate = (0.65 + stability * 4.2) * Math.min(Math.max(tiltDegrees, 1) / 24, 1.8);
+    const correctionAlpha = 1 - Math.exp(-correctionRate * deltaSeconds);
+    const currentRotation = new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
+    const fullCorrection = new Quaternion().setFromUnitVectors(bodyUp, WORLD_UP);
+    const partialCorrection = new Quaternion().identity().slerp(fullCorrection, correctionAlpha);
+    const correctedRotation = partialCorrection.multiply(currentRotation).normalize();
+
+    body.setRotation(toRapierQuaternion(correctedRotation), true);
+  }
+}
+
+export function limitTopAngularVelocity(body: RapierRigidBody, spinDirection: 1 | -1 = 1, maxSpinRpm = MAX_SPIN_RPM): void {
+  const rotation = body.rotation();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocity = body.angvel();
+  const angularVelocityVector = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z);
+  const rawSpinRadiansPerSecond = angularVelocityVector.dot(bodyUp);
+  const cappedSpinRpm = clamp(maxSpinRpm, 0, MAX_SPIN_RPM);
+  const spinRadiansPerSecond = Math.min(Math.abs(rawSpinRadiansPerSecond), rpmToRadiansPerSecond(cappedSpinRpm)) * spinDirection;
+  const spinVector = bodyUp.clone().multiplyScalar(spinRadiansPerSecond);
+  const tumbleVelocity = angularVelocityVector.sub(bodyUp.clone().multiplyScalar(rawSpinRadiansPerSecond));
+
+  if (tumbleVelocity.length() > MAX_TUMBLE_RADIANS_PER_SECOND) {
+    tumbleVelocity.setLength(MAX_TUMBLE_RADIANS_PER_SECOND);
+  }
+
+  const limitedVelocity = spinVector.add(tumbleVelocity);
+
+  body.setAngvel(
+    {
+      x: limitedVelocity.x,
+      y: limitedVelocity.y,
+      z: limitedVelocity.z,
     },
     true,
   );
@@ -332,22 +421,28 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
   let nextVelocityX = linearVelocity.x;
   let nextVelocityY = linearVelocity.y;
   let nextVelocityZ = linearVelocity.z;
+  const surfaceContact = calculateSurfaceContact(body, proxyGeometry);
   let shouldUpdateTranslation = false;
   let shouldUpdateVelocity = false;
 
-  if (nextY < groundBodyY - 0.02) {
+  if (surfaceContact.maxPenetration > 0) {
+    nextY += surfaceContact.maxPenetration + CONTACT_CLEARANCE;
+    nextVelocityY = Math.max(0, nextVelocityY);
+    shouldUpdateTranslation = true;
+    shouldUpdateVelocity = true;
+  }
+
+  if (nextY < groundBodyY) {
     nextY = groundBodyY;
     nextVelocityY = Math.max(0, nextVelocityY);
     shouldUpdateTranslation = true;
     shouldUpdateVelocity = true;
   }
 
-  if (nextY > groundBodyY + hardHoverY) {
-    nextY = groundBodyY + hardHoverY;
+  if (surfaceContact.maxPenetration <= 0 && nextY > groundBodyY + hardHoverY) {
     nextVelocityY = Math.min(0, nextVelocityY);
-    shouldUpdateTranslation = true;
     shouldUpdateVelocity = true;
-  } else if (nextY > groundBodyY + softHoverY && nextVelocityY > 0) {
+  } else if (surfaceContact.maxPenetration <= 0 && nextY > groundBodyY + softHoverY && nextVelocityY > 0) {
     nextVelocityY *= 0.18;
     shouldUpdateVelocity = true;
   }
@@ -358,14 +453,18 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
   }
 
   const contactWindow = Math.max(hardHoverY, 0.12);
-  const contactStrength = Math.max(0, Math.min((groundBodyY + contactWindow - nextY) / contactWindow, 1));
+  const contactStrength = Math.max(
+    surfaceContact.maxPenetration > 0 ? 0.9 : 0,
+    Math.min((groundBodyY + contactWindow - nextY) / contactWindow, 1),
+  );
 
   if (contactStrength > 0) {
-    const gradient = getStadiumSurfaceGradientAt(translation.x, translation.z, stadium);
+    const gradient = getStadiumSurfaceGradientAt(surfaceContact.supportX, surfaceContact.supportZ, stadium);
     const accelerationScale = 9.81 * BOWL_SLOPE_ACCELERATION_SCALE * contactStrength;
+    const floorDrag = Math.exp(-(stadium.floorFriction * 10 + proxyGeometry.tipFriction * 0.055 + surfaceContact.bladeContactStrength * 0.18) * deltaSeconds);
 
-    nextVelocityX -= gradient.x * accelerationScale * deltaSeconds;
-    nextVelocityZ -= gradient.z * accelerationScale * deltaSeconds;
+    nextVelocityX = (nextVelocityX - gradient.x * accelerationScale * deltaSeconds) * floorDrag;
+    nextVelocityZ = (nextVelocityZ - gradient.z * accelerationScale * deltaSeconds) * floorDrag;
 
     const horizontalSpeed = Math.hypot(nextVelocityX, nextVelocityZ);
 
@@ -376,6 +475,21 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
     }
 
     shouldUpdateVelocity = true;
+  }
+
+  if (surfaceContact.bladeContactStrength > 0) {
+    const angularVelocity = body.angvel();
+    const tumbleDamping = Math.exp(-surfaceContact.bladeContactStrength * 4.8 * deltaSeconds);
+    const scrapeSpinDamping = Math.exp(-surfaceContact.bladeContactStrength * 0.035 * deltaSeconds);
+
+    body.setAngvel(
+      {
+        x: angularVelocity.x * tumbleDamping,
+        y: angularVelocity.y * scrapeSpinDamping,
+        z: angularVelocity.z * tumbleDamping,
+      },
+      true,
+    );
   }
 
   if (shouldUpdateTranslation) {
@@ -399,6 +513,62 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
       true,
     );
   }
+}
+
+function calculateSurfaceContact(body: RapierRigidBody, proxyGeometry: ProxyGeometry): {
+  maxPenetration: number;
+  supportX: number;
+  supportZ: number;
+  bladeContactStrength: number;
+} {
+  const translation = body.translation();
+  const rotation = body.rotation();
+  const stadium = getActiveStadiumPreset();
+  const bodyHeight = getBodyHeight(proxyGeometry);
+  const bodyFloorClearance = getBodyFloorClearance(proxyGeometry);
+  const lowerBladeY = ARENA_SURFACE_Y + bodyFloorClearance + bodyHeight * 0.08;
+  const ringUndersideY = ARENA_SURFACE_Y + bodyFloorClearance + bodyHeight * 0.48;
+  const samples = [
+    { radius: 0, y: ARENA_SURFACE_Y, count: 1, blade: false },
+    { radius: proxyGeometry.radiusWorld * 0.46, y: lowerBladeY, count: 8, blade: true },
+    { radius: proxyGeometry.radiusWorld * 0.88, y: lowerBladeY, count: 10, blade: true },
+    { radius: proxyGeometry.radiusWorld * 0.96, y: ringUndersideY, count: 12, blade: true },
+  ];
+  let maxPenetration = 0;
+  let supportX = translation.x;
+  let supportZ = translation.z;
+  let bladeContactStrength = 0;
+
+  for (const sample of samples) {
+    for (let index = 0; index < sample.count; index += 1) {
+      const angle = sample.count === 1 ? 0 : (index / sample.count) * Math.PI * 2;
+      const localX = Math.cos(angle) * sample.radius;
+      const localZ = Math.sin(angle) * sample.radius;
+      const rotated = rotateLocalPoint(localX, sample.y, localZ, rotation);
+      const worldX = translation.x + rotated.x;
+      const worldY = translation.y + rotated.y;
+      const worldZ = translation.z + rotated.z;
+      const surfaceY = getStadiumSurfaceYAt(worldX, worldZ, stadium);
+      const penetration = surfaceY - worldY;
+
+      if (penetration > maxPenetration) {
+        maxPenetration = penetration;
+        supportX = worldX;
+        supportZ = worldZ;
+      }
+
+      if (sample.blade && penetration > 0) {
+        bladeContactStrength = Math.max(bladeContactStrength, Math.min(penetration / 0.12, 1));
+      }
+    }
+  }
+
+  return {
+    maxPenetration,
+    supportX,
+    supportZ,
+    bladeContactStrength,
+  };
 }
 
 export function calculateTopTelemetry(body: RapierRigidBody | null, stopReason: SimulationStopReason): TopTelemetry {
@@ -447,7 +617,7 @@ export function getStopCandidateReason(
     return 'arena_exit';
   }
 
-  if (tiltDegrees > STOP_TILT_DEGREES) {
+  if ((tiltDegrees > 88 && spinRpm < 1600) || (tiltDegrees > STOP_TILT_DEGREES && spinRpm < 700)) {
     return 'tilt_limit';
   }
 
@@ -474,9 +644,12 @@ function isRingOutPosition(radialDistance: number, position?: { x: number; z: nu
   return radialDistance > ringOutRadius;
 }
 
-export function getBodyTransform(body: RapierRigidBody) {
+export function getBodyTransform(body: RapierRigidBody, visualSpinRadians?: number) {
   const translation = body.translation();
   const rotation = body.rotation();
+  const visualQuaternion = Number.isFinite(visualSpinRadians)
+    ? getVisualSpinQuaternion(rotation, visualSpinRadians ?? 0)
+    : rotation;
 
   return {
     position: {
@@ -485,12 +658,25 @@ export function getBodyTransform(body: RapierRigidBody) {
       z: translation.z,
     },
     quaternion: {
-      x: rotation.x,
-      y: rotation.y,
-      z: rotation.z,
-      w: rotation.w,
+      x: visualQuaternion.x,
+      y: visualQuaternion.y,
+      z: visualQuaternion.z,
+      w: visualQuaternion.w,
     },
   };
+}
+
+export function updateVisualSpinRadians(body: RapierRigidBody, currentRadians: number, deltaSeconds: number, spinDirection: 1 | -1 = 1): number {
+  const rotation = body.rotation();
+  const angularVelocity = body.angvel();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocityVector = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z);
+  const actualSpinRadiansPerSecond = Math.abs(angularVelocityVector.dot(bodyUp));
+  const actualSpinRpm = radiansPerSecondToRpm(actualSpinRadiansPerSecond);
+  const displayedSpinRpm = Math.min(actualSpinRpm, MAX_VISUAL_SPIN_RPM);
+  const displayedRadiansPerSecond = rpmToRadiansPerSecond(displayedSpinRpm) * spinDirection;
+
+  return wrapRadians(currentRadians + displayedRadiansPerSecond * deltaSeconds);
 }
 
 function createTopColliders(
@@ -500,7 +686,7 @@ function createTopColliders(
   proxyGeometry: ProxyGeometry,
   options: TopRigidBodyOptions,
 ): void {
-  const bodyHeight = Math.max(proxyGeometry.heightWorld - proxyGeometry.tipRadiusWorld * 0.7, 0.08);
+  const bodyHeight = getBodyHeight(proxyGeometry);
   const bodyFloorClearance = getBodyFloorClearance(proxyGeometry);
   const bodyCenterY = ARENA_SURFACE_Y + bodyFloorClearance + bodyHeight / 2;
   const activeEvents = rapier.ActiveEvents.NONE;
@@ -568,6 +754,46 @@ function createStrikePointColliders(
 
 function getBodyFloorClearance(proxyGeometry: ProxyGeometry): number {
   return clamp(proxyGeometry.radiusWorld * 0.3, proxyGeometry.tipRadiusWorld * 1.8, 0.72);
+}
+
+function getBodyHeight(proxyGeometry: ProxyGeometry): number {
+  return Math.max(proxyGeometry.heightWorld - proxyGeometry.tipRadiusWorld * 0.7, 0.08);
+}
+
+function getVisualSpinQuaternion(
+  rotation: { x: number; y: number; z: number; w: number },
+  visualSpinRadians: number,
+): { x: number; y: number; z: number; w: number } {
+  const physicsQuaternion = new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
+  const bodyUp = WORLD_UP.clone().applyQuaternion(physicsQuaternion).normalize();
+  const tiltQuaternion = new Quaternion().setFromUnitVectors(WORLD_UP, bodyUp);
+  const spinQuaternion = new Quaternion().setFromAxisAngle(WORLD_UP, visualSpinRadians);
+  const visualQuaternion = tiltQuaternion.multiply(spinQuaternion);
+
+  return {
+    x: visualQuaternion.x,
+    y: visualQuaternion.y,
+    z: visualQuaternion.z,
+    w: visualQuaternion.w,
+  };
+}
+
+function rotateLocalPoint(
+  x: number,
+  y: number,
+  z: number,
+  quaternion: { x: number; y: number; z: number; w: number },
+): { x: number; y: number; z: number } {
+  const ix = quaternion.w * x + quaternion.y * z - quaternion.z * y;
+  const iy = quaternion.w * y + quaternion.z * x - quaternion.x * z;
+  const iz = quaternion.w * z + quaternion.x * y - quaternion.y * x;
+  const iw = -quaternion.x * x - quaternion.y * y - quaternion.z * z;
+
+  return {
+    x: ix * quaternion.w + iw * -quaternion.x + iy * -quaternion.z - iz * -quaternion.y,
+    y: iy * quaternion.w + iw * -quaternion.y + iz * -quaternion.x - ix * -quaternion.z,
+    z: iz * quaternion.w + iw * -quaternion.z + ix * -quaternion.y - iy * -quaternion.x,
+  };
 }
 
 function getTipContact(tipType: TipType, radiusWorld: number, profileFriction: number): { radiusWorld: number; friction: number } {
@@ -646,6 +872,10 @@ function getClampedLaunchPosition(position: LaunchSettings['position'], radiusWo
 
 function getBodyYOffsetForSurface(x: number, z: number): number {
   return getStadiumSurfaceYAt(x, z, getActiveStadiumPreset()) - ARENA_SURFACE_Y;
+}
+
+function wrapRadians(value: number): number {
+  return ((((value + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
 }
 
 function toRapierQuaternion(quaternion: Quaternion): { x: number; y: number; z: number; w: number } {

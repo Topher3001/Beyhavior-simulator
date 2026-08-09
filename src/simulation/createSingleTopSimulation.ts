@@ -7,16 +7,20 @@ import {
   MAX_STEPS_PER_FRAME,
   STOP_DURATION_SECONDS,
   applyArenaContainment,
+  applyGyroscopicStability,
   applyProfileDamping,
   applyWobbleTorque,
   calculateTopTelemetry,
   createArenaColliders,
   createProxyGeometry,
   createTopRigidBody,
+  decaySpinCeilingRpm,
   getBodyTransform,
   getLaunchSettingsFromProfile,
   getStopCandidateReason,
+  limitTopAngularVelocity,
   stabilizeTopGroundContact,
+  updateVisualSpinRadians,
   type ProxyGeometry,
   type RapierRigidBody,
   type RapierRuntime,
@@ -37,6 +41,8 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
   let elapsedSeconds = 0;
   let stopCandidateSeconds = 0;
   let stopCandidateReason: SimulationStopReason = null;
+  let visualSpinRadians = 0;
+  let spinCeilingRpm = 0;
   let telemetry = createTelemetry('ready');
   const traceRecorder = createTraceRecorder();
 
@@ -72,6 +78,8 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
     elapsedSeconds = 0;
     stopCandidateSeconds = 0;
     stopCandidateReason = null;
+    visualSpinRadians = 0;
+    spinCeilingRpm = withLaunchVelocity ? currentProfile.defaultLaunchRpm : 0;
     syncSceneTransform();
   };
 
@@ -93,9 +101,14 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
 
     applyProfileDamping(topBody, currentProfile, proxyGeometry, deltaSeconds);
     applyWobbleTorque(topBody, proxyGeometry);
+    applyGyroscopicStability(topBody, proxyGeometry, deltaSeconds);
     world.step();
-    stabilizeTopGroundContact(topBody, proxyGeometry, deltaSeconds);
     applyArenaContainment(topBody, proxyGeometry);
+    stabilizeTopGroundContact(topBody, proxyGeometry, deltaSeconds);
+    applyGyroscopicStability(topBody, proxyGeometry, deltaSeconds);
+    spinCeilingRpm = decaySpinCeilingRpm(spinCeilingRpm, currentProfile, proxyGeometry, deltaSeconds);
+    limitTopAngularVelocity(topBody, 1, spinCeilingRpm);
+    visualSpinRadians = updateVisualSpinRadians(topBody, visualSpinRadians, deltaSeconds);
     elapsedSeconds += deltaSeconds;
     telemetry = calculateTelemetry(topBody, telemetry.status, elapsedSeconds, telemetry.stopReason, telemetry.errorMessage);
     recordTraceSample();
@@ -107,7 +120,7 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
       return;
     }
 
-    simulatorScene.setSimulationTransform(currentDesign, getBodyTransform(topBody));
+    simulatorScene.setSimulationTransform(currentDesign, getBodyTransform(topBody, visualSpinRadians));
   };
 
   const updateStopDetection = (deltaSeconds: number) => {
@@ -149,7 +162,7 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
 
     traceRecorder.recordSingle(elapsedSeconds, {
       telemetry: calculateTopTelemetry(topBody, telemetry.stopReason),
-      transform: getBodyTransform(topBody),
+      transform: getBodyTransform(topBody, visualSpinRadians),
     });
   };
 

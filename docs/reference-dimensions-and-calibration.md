@@ -16,13 +16,13 @@ The active default stadium is the Takara Tomy Beyblade X Xtreme Stadium BX-10 be
 Current implementation files:
 
 - `src/simulation/stadiumConfig.ts` stores the measurements, derived world-scale dimensions, pocket arcs, rim friction, and floor friction.
-- `src/simulation/stadiumSurface.ts` generates the shared bowl height and slope profile used by rendering and physics.
-- `src/scene/createArena.ts` renders the active stadium as a bowl with stronger depth shading, a rounded outer lip, visible wall gaps, pocket guards, and a tornado ridge.
+- `src/simulation/stadiumSurface.ts` generates the shared central-basin and banked-rim bowl profile used by rendering and physics.
+- `src/scene/createArena.ts` renders the active stadium as a molded bowl with stronger depth shading, an outer shell, a rounded lip, visible wall gaps, pocket guards, and a tornado ridge.
 - `src/simulation/physicsCore.ts` uses analytic bowl contact for the floor, plus Rapier ridge, wall, pocket guard, and bey proxy colliders.
 
 ## Built-In Test Beys
 
-The Import tab includes six repeatable reference models. Each reference generates a colored STL in memory and can be saved into the library with a physics profile.
+The Import tab includes six repeatable reference models. Each reference generates a colored, layered Beyblade-style STL in memory and can be saved into the library with a physics profile. Older saved reference records with matching filenames are re-rendered with the improved procedural model when selected.
 
 | Reference Bey | Why Included | Diameter / Radius | Total Weight | Contact Profile |
 | --- | --- | --- | --- | --- |
@@ -36,6 +36,7 @@ The Import tab includes six repeatable reference models. Each reference generate
 Implementation file:
 
 - `src/model/referenceBeyblades.ts` stores the reference dimensions, generated STL geometry, total weight, launch defaults, tip type, friction/damping, and contact profile.
+- `src/model/proceduralBeybladeStl.ts` builds the layered driver, disk, lobed attack ring, and center-cap geometry used by the sample and reference models.
 
 ## Contact Profile
 

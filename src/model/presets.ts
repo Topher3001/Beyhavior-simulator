@@ -28,10 +28,10 @@ export const TIP_PRESETS: TipPreset[] = [
     label: 'Sharp',
     patch: {
       tipType: 'sharp',
-      tipFrictionCoefficient: 0.28,
-      ringFrictionCoefficient: 0.24,
-      airDragCoefficient: 0.01,
-      spinDampingCoefficient: 0.012,
+      tipFrictionCoefficient: 0.22,
+      ringFrictionCoefficient: 0.18,
+      airDragCoefficient: 0.004,
+      spinDampingCoefficient: 0.004,
     },
   },
   {
@@ -39,10 +39,10 @@ export const TIP_PRESETS: TipPreset[] = [
     label: 'Flat',
     patch: {
       tipType: 'flat',
-      tipFrictionCoefficient: 0.42,
-      ringFrictionCoefficient: 0.28,
-      airDragCoefficient: 0.012,
-      spinDampingCoefficient: 0.018,
+      tipFrictionCoefficient: 0.34,
+      ringFrictionCoefficient: 0.22,
+      airDragCoefficient: 0.006,
+      spinDampingCoefficient: 0.007,
     },
   },
   {
@@ -50,10 +50,10 @@ export const TIP_PRESETS: TipPreset[] = [
     label: 'Ball',
     patch: {
       tipType: 'ball',
-      tipFrictionCoefficient: 0.36,
-      ringFrictionCoefficient: 0.26,
-      airDragCoefficient: 0.011,
-      spinDampingCoefficient: 0.015,
+      tipFrictionCoefficient: 0.28,
+      ringFrictionCoefficient: 0.2,
+      airDragCoefficient: 0.005,
+      spinDampingCoefficient: 0.005,
     },
   },
   {
@@ -61,10 +61,10 @@ export const TIP_PRESETS: TipPreset[] = [
     label: 'Rubber',
     patch: {
       tipType: 'rubber',
-      tipFrictionCoefficient: 0.78,
-      ringFrictionCoefficient: 0.34,
-      airDragCoefficient: 0.018,
-      spinDampingCoefficient: 0.032,
+      tipFrictionCoefficient: 0.62,
+      ringFrictionCoefficient: 0.28,
+      airDragCoefficient: 0.009,
+      spinDampingCoefficient: 0.012,
     },
   },
   {
@@ -72,10 +72,10 @@ export const TIP_PRESETS: TipPreset[] = [
     label: 'Custom',
     patch: {
       tipType: 'custom',
-      tipFrictionCoefficient: 0.5,
-      ringFrictionCoefficient: 0.3,
-      airDragCoefficient: 0.014,
-      spinDampingCoefficient: 0.02,
+      tipFrictionCoefficient: 0.38,
+      ringFrictionCoefficient: 0.24,
+      airDragCoefficient: 0.007,
+      spinDampingCoefficient: 0.008,
     },
   },
 ];

@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  DoubleSide,
   Group,
   Material,
   Mesh,
@@ -12,6 +13,10 @@ import {
 } from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import {
+  createReferenceBeybladeFile,
+  getReferenceBeybladePresetByFileName,
+} from './referenceBeyblades';
 import type { Dimensions, LoadedDesign, SupportedDesignFileType, UpAxis } from './types';
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
@@ -20,10 +25,11 @@ const ARENA_SURFACE_Y = 0.1;
 
 const generatedMaterialBase = {
   color: '#f7fbff',
-  emissive: '#081014',
-  emissiveIntensity: 0.025,
+  emissive: '#162027',
+  emissiveIntensity: 0.08,
   metalness: 0.36,
   roughness: 0.31,
+  side: DoubleSide,
   vertexColors: true,
 };
 
@@ -44,8 +50,9 @@ export async function loadDesignFile(file: File, upAxis: UpAxis): Promise<Loaded
   validateFile(file);
 
   const fileType = getSupportedFileType(file.name);
-  const parsedObject = await parseFileByType(file, fileType);
-  prepareImportedObject(parsedObject);
+  const fileForParsing = getDisplayFile(file);
+  const parsedObject = await parseFileByType(fileForParsing, fileType);
+  prepareImportedObject(parsedObject, upAxis);
 
   const rawDimensions = getObjectDimensions(parsedObject);
   const { object, scaleFactor } = normalizeImportedObject(parsedObject, upAxis);
@@ -63,6 +70,12 @@ export async function loadDesignFile(file: File, upAxis: UpAxis): Promise<Loaded
     object,
     thumbnailDataUrl: '',
   };
+}
+
+function getDisplayFile(file: File): File {
+  const referencePreset = getReferenceBeybladePresetByFileName(file.name);
+
+  return referencePreset ? createReferenceBeybladeFile(referencePreset) : file;
 }
 
 export function getSupportedFileType(fileName: string): SupportedDesignFileType {
@@ -107,9 +120,6 @@ async function parseStlFile(file: File): Promise<Group> {
   if (!geometry.attributes.position || geometry.attributes.position.count === 0) {
     throw new Error('The STL file did not contain any visible geometry.');
   }
-
-  geometry.computeVertexNormals();
-  applyGeneratedVertexColors(geometry, 0);
 
   const mesh = new Mesh(geometry, createGeneratedImportedMaterial());
   mesh.name = 'ImportedSTLMesh';
@@ -180,7 +190,7 @@ function normalizeImportedObject(sourceObject: Group, upAxis: UpAxis): { object:
   return { object: normalizedRoot, scaleFactor };
 }
 
-function prepareImportedObject(object: Object3D): void {
+function prepareImportedObject(object: Object3D, upAxis: UpAxis): void {
   let meshIndex = 0;
 
   object.traverse((child) => {
@@ -191,9 +201,9 @@ function prepareImportedObject(object: Object3D): void {
     child.castShadow = true;
     child.receiveShadow = true;
 
-    if (shouldApplyGeneratedStyle(child.material)) {
+    if (shouldApplyGeneratedStyle(child.material) || shouldApplyMissingGeneratedVertexColors(child)) {
       child.geometry.computeVertexNormals();
-      applyGeneratedVertexColors(child.geometry, meshIndex);
+      applyGeneratedVertexColors(child.geometry, meshIndex, upAxis);
       child.material = createGeneratedImportedMaterial();
     }
 
@@ -205,7 +215,7 @@ function createGeneratedImportedMaterial(): MeshStandardMaterial {
   return new MeshStandardMaterial(generatedMaterialBase);
 }
 
-function applyGeneratedVertexColors(geometry: BufferGeometry, seed: number): void {
+function applyGeneratedVertexColors(geometry: BufferGeometry, seed: number, upAxis: UpAxis): void {
   const position = geometry.getAttribute('position');
 
   if (!position) {
@@ -222,8 +232,8 @@ function applyGeneratedVertexColors(geometry: BufferGeometry, seed: number): voi
 
   const center = bounds.getCenter(new Vector3());
   const size = bounds.getSize(new Vector3());
-  const maxRadius = Math.max(size.x, size.z, 0.001) / 2;
-  const height = Math.max(size.y, 0.001);
+  const maxRadius = (upAxis === 'z' ? Math.max(size.x, size.y, 0.001) : Math.max(size.x, size.z, 0.001)) / 2;
+  const height = Math.max(upAxis === 'z' ? size.z : size.y, 0.001);
   const colors = new Float32Array(position.count * 3);
   const workingColor = new Color();
 
@@ -231,9 +241,13 @@ function applyGeneratedVertexColors(geometry: BufferGeometry, seed: number): voi
     const x = position.getX(index);
     const y = position.getY(index);
     const z = position.getZ(index);
-    const yNorm = (y - bounds.min.y) / height;
-    const radiusNorm = Math.min(Math.hypot(x - center.x, z - center.z) / maxRadius, 1);
-    const angle = Math.atan2(z - center.z, x - center.x) + seed * 0.85;
+    const vertical = upAxis === 'z' ? z : y;
+    const verticalMin = upAxis === 'z' ? bounds.min.z : bounds.min.y;
+    const horizontalA = upAxis === 'z' ? x - center.x : x - center.x;
+    const horizontalB = upAxis === 'z' ? y - center.y : z - center.z;
+    const yNorm = (vertical - verticalMin) / height;
+    const radiusNorm = Math.min(Math.hypot(horizontalA, horizontalB) / maxRadius, 1);
+    const angle = Math.atan2(horizontalB, horizontalA) + seed * 0.85;
     const sector = Math.abs(Math.floor(((angle + Math.PI) / (Math.PI * 2)) * generatedPalette.length)) % generatedPalette.length;
 
     if (yNorm < 0.16) {
@@ -310,6 +324,16 @@ function shouldApplyGeneratedStyle(material: Material | Material[] | undefined):
   }
 
   return isPlainGeneratedCandidate(material);
+}
+
+function shouldApplyMissingGeneratedVertexColors(mesh: Mesh): boolean {
+  if (mesh.geometry.getAttribute('color')) {
+    return false;
+  }
+
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+
+  return materials.some((material) => (material as MeshStandardMaterial).vertexColors === true);
 }
 
 function isPlainGeneratedCandidate(material: Material): boolean {

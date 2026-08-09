@@ -10,7 +10,7 @@ The simulator currently supports:
 
 - A full-window 3D arena with orbit camera controls, lighting, and a visible stadium boundary.
 - STL and OBJ imports for visual Beyblade design files, including centering, scaling, bounds display, and thumbnails.
-- Built-in reference Beyblade test models with sourced dimensions, weights, launch defaults, and contact profiles for repeatable calibration.
+- Built-in reference Beyblade test models with sourced dimensions, layered procedural Beyblade visuals, weights, launch defaults, and contact profiles for repeatable calibration.
 - A local design library using IndexedDB, with save, load, rename, and delete actions.
 - Editable physics profiles for saved designs, including weight, radius, height, center of mass, tip type, friction, damping, strike/contact shape, and launch defaults.
 - Live center-of-mass visualization and reusable tip and launch presets for faster tuning.
@@ -71,15 +71,17 @@ Each design gets a simplified physics proxy:
 - A small tip collider for stadium contact.
 - A wider ring collider and a capped set of strike-point colliders in battle mode for bey-to-bey impacts.
 - Profile-driven friction, damping, center of mass, inertia estimate, launch RPM, launch angle, and launch position.
+- A decaying per-run spin ceiling and high-RPM gyroscopic stabilization pass to prevent contact from creating impossible spin or making tops fall over too easily.
 
 This is intended to be stable and tunable rather than perfectly physically accurate.
 
 ## Stadium Behavior
 
-The arena uses a visibly bowl-shaped floor mesh, a rounded lip, a visible tornado ridge, segmented fixed rim colliders, and pocket openings based on reference stadium dimensions. The floor itself is handled by a lightweight analytic bowl-height contact model instead of a Rapier trimesh collider, which keeps battles smoother while still making tops ride the selected stadium shape.
+The arena uses a visibly bowl-shaped floor mesh with a low central basin, steeper banked outer rim, rounded lip, visible tornado ridge, segmented fixed rim colliders, and pocket openings based on reference stadium dimensions. The floor itself is handled by a lightweight analytic bowl-height contact model instead of a Rapier trimesh collider, which keeps battles smoother while still making tops ride the selected stadium shape.
 
 - Tip restitution is set to zero, and floor contact is clamped by the analytic bowl surface.
 - Simulation launch height and ground-contact stabilization follow the selected bowl surface.
+- Tip, lower blade, and ring underside contact samples are checked against the bowl so tilted beys rest on the stadium instead of sinking through it.
 - Bowl slope forces nudge tops inward as they climb the dish.
 - Rim, body, and battle-ring restitution are kept very low.
 - The broad body/ring collider is raised so normal spinning contact is primarily through the tip.

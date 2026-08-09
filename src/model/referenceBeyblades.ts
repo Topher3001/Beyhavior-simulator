@@ -1,18 +1,5 @@
 import type { PhysicsProfile } from './types';
-
-const SEGMENTS = 72;
-
-type Vertex = {
-  x: number;
-  y: number;
-  z: number;
-};
-
-type ProfileLevel = {
-  radius: number;
-  z: number;
-  lobeStrength: number;
-};
+import { createProceduralBeybladeStl } from './proceduralBeybladeStl';
 
 export type ReferenceBeybladePreset = {
   id: string;
@@ -47,10 +34,10 @@ export const REFERENCE_BEYBLADE_PRESETS: ReferenceBeybladePreset[] = [
     launchAngleDegrees: 8,
     launchX: -1.1,
     launchZ: 0.4,
-    tipFriction: 0.5,
+    tipFriction: 0.42,
     ringFriction: 0.38,
-    airDrag: 0.016,
-    spinDamping: 0.024,
+    airDrag: 0.008,
+    spinDamping: 0.009,
   }),
   createPreset({
     id: 'hells-scythe-4-60t',
@@ -69,10 +56,10 @@ export const REFERENCE_BEYBLADE_PRESETS: ReferenceBeybladePreset[] = [
     launchAngleDegrees: 5,
     launchX: -0.35,
     launchZ: 0.15,
-    tipFriction: 0.38,
+    tipFriction: 0.32,
     ringFriction: 0.31,
-    airDrag: 0.013,
-    spinDamping: 0.018,
+    airDrag: 0.007,
+    spinDamping: 0.007,
   }),
   createPreset({
     id: 'phoenix-wing-9-60gf',
@@ -91,10 +78,10 @@ export const REFERENCE_BEYBLADE_PRESETS: ReferenceBeybladePreset[] = [
     launchAngleDegrees: 9,
     launchX: -1.35,
     launchZ: 0.35,
-    tipFriction: 0.58,
+    tipFriction: 0.48,
     ringFriction: 0.42,
-    airDrag: 0.017,
-    spinDamping: 0.026,
+    airDrag: 0.009,
+    spinDamping: 0.01,
   }),
   createPreset({
     id: 'shark-edge-3-60lf',
@@ -113,10 +100,10 @@ export const REFERENCE_BEYBLADE_PRESETS: ReferenceBeybladePreset[] = [
     launchAngleDegrees: 10,
     launchX: -1.55,
     launchZ: 0.3,
-    tipFriction: 0.62,
+    tipFriction: 0.5,
     ringFriction: 0.45,
-    airDrag: 0.019,
-    spinDamping: 0.032,
+    airDrag: 0.01,
+    spinDamping: 0.012,
   }),
   createPreset({
     id: 'wizard-arrow-4-80b',
@@ -135,10 +122,10 @@ export const REFERENCE_BEYBLADE_PRESETS: ReferenceBeybladePreset[] = [
     launchAngleDegrees: 2,
     launchX: 0,
     launchZ: 0,
-    tipFriction: 0.32,
+    tipFriction: 0.27,
     ringFriction: 0.22,
-    airDrag: 0.011,
-    spinDamping: 0.014,
+    airDrag: 0.005,
+    spinDamping: 0.005,
   }),
   createPreset({
     id: 'wizard-rod-5-70db',
@@ -157,15 +144,19 @@ export const REFERENCE_BEYBLADE_PRESETS: ReferenceBeybladePreset[] = [
     launchAngleDegrees: 1.5,
     launchX: 0,
     launchZ: 0,
-    tipFriction: 0.34,
+    tipFriction: 0.28,
     ringFriction: 0.2,
-    airDrag: 0.01,
-    spinDamping: 0.011,
+    airDrag: 0.004,
+    spinDamping: 0.004,
   }),
 ];
 
 export function getReferenceBeybladePreset(id: string): ReferenceBeybladePreset | undefined {
   return REFERENCE_BEYBLADE_PRESETS.find((preset) => preset.id === id);
+}
+
+export function getReferenceBeybladePresetByFileName(fileName: string): ReferenceBeybladePreset | undefined {
+  return REFERENCE_BEYBLADE_PRESETS.find((preset) => preset.fileName.toLowerCase() === fileName.toLowerCase());
 }
 
 export function createReferenceBeybladeFile(preset: ReferenceBeybladePreset): File {
@@ -239,81 +230,14 @@ function createPreset(options: {
 }
 
 function createReferenceStl(preset: ReferenceBeybladePreset): string {
-  const radius = preset.dimensions.diameterMm / 2;
-  const height = preset.dimensions.heightMm;
-  const bladeStart = Math.max(height - preset.dimensions.bladeHeightMm, height * 0.58);
-  const facets: string[] = [`solid ${preset.id}`];
-  const levels: ProfileLevel[] = [
-    { radius: 0, z: 0, lobeStrength: 0 },
-    { radius: radius * 0.13, z: height * 0.08, lobeStrength: 0.08 },
-    { radius: radius * 0.24, z: height * 0.28, lobeStrength: 0.05 },
-    { radius: radius * 0.44, z: bladeStart, lobeStrength: 0.12 },
-    { radius: radius * 0.94, z: bladeStart + preset.dimensions.bladeHeightMm * 0.25, lobeStrength: preset.profile.contactProfile.attackBias },
-    { radius, z: bladeStart + preset.dimensions.bladeHeightMm * 0.58, lobeStrength: preset.profile.contactProfile.attackBias },
-    { radius: radius * 0.72, z: height, lobeStrength: preset.profile.contactProfile.attackBias * 0.55 },
-    { radius: 0, z: height, lobeStrength: 0 },
-  ];
-
-  for (let levelIndex = 0; levelIndex < levels.length - 1; levelIndex += 1) {
-    const lower = levels[levelIndex];
-    const upper = levels[levelIndex + 1];
-
-    for (let segment = 0; segment < SEGMENTS; segment += 1) {
-      const nextSegment = (segment + 1) % SEGMENTS;
-      const lowerA = pointOnLevel(lower, segment, preset);
-      const lowerB = pointOnLevel(lower, nextSegment, preset);
-      const upperA = pointOnLevel(upper, segment, preset);
-      const upperB = pointOnLevel(upper, nextSegment, preset);
-
-      if (lower.radius === 0) {
-        facets.push(formatFacet(lowerA, upperA, upperB));
-      } else if (upper.radius === 0) {
-        facets.push(formatFacet(lowerA, upperB, lowerB));
-      } else {
-        facets.push(formatFacet(lowerA, upperA, upperB));
-        facets.push(formatFacet(lowerA, upperB, lowerB));
-      }
-    }
-  }
-
-  facets.push(`endsolid ${preset.id}`);
-
-  return facets.join('\n');
-}
-
-function pointOnLevel(level: ProfileLevel, segment: number, preset: ReferenceBeybladePreset): Vertex {
-  const angle = (segment / SEGMENTS) * Math.PI * 2;
-  const points = Math.max(1, preset.profile.contactProfile.attackPoints);
-  const attackBias = preset.profile.contactProfile.attackBias;
-  const lobe = Math.max(0, Math.cos(angle * points));
-  const ripple = Math.sin(angle * points * 2 + points) * 0.035;
-  const localRadius = level.radius * (1 + level.lobeStrength * (0.02 + attackBias * 0.14) * lobe + ripple * level.lobeStrength);
-
-  return {
-    x: Math.cos(angle) * localRadius,
-    y: Math.sin(angle) * localRadius,
-    z: level.z,
-  };
-}
-
-function formatFacet(a: Vertex, b: Vertex, c: Vertex): string {
-  return [
-    '  facet normal 0 0 0',
-    '    outer loop',
-    formatVertex(a),
-    formatVertex(b),
-    formatVertex(c),
-    '    endloop',
-    '  endfacet',
-  ].join('\n');
-}
-
-function formatVertex(vertex: Vertex): string {
-  return `      vertex ${formatNumber(vertex.x)} ${formatNumber(vertex.y)} ${formatNumber(vertex.z)}`;
-}
-
-function formatNumber(value: number): string {
-  return Number(value.toFixed(5)).toString();
+  return createProceduralBeybladeStl({
+    solidName: preset.id,
+    diameterMm: preset.dimensions.diameterMm,
+    heightMm: preset.dimensions.heightMm,
+    attackPoints: preset.profile.contactProfile.attackPoints,
+    attackBias: preset.profile.contactProfile.attackBias,
+    tipType: preset.profile.tipType,
+  });
 }
 
 function round(value: number): number {
