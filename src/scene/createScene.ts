@@ -276,7 +276,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
   };
 
   function alignDemoTopToStadium(): void {
-    testTop.object.position.y = getStadiumSurfaceYAt(0, 0, activeStadium) + 0.1;
+    testTop.object.position.y = getStadiumSurfaceYAt(0, 0, activeStadium) + 0.065;
   }
 
   function getPreviewYOffset(x: number, z: number): number {
@@ -330,7 +330,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
       thumbnailTarget = simulationAnchor;
       scene.add(simulationAnchor);
       scene.add(importedBoundsHelper);
-      fitCameraToObject(simulationAnchor);
+      setDefaultCameraView();
       renderScene();
     },
     resetToDemoTop: () => {
@@ -396,7 +396,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
       battleBoundsHelpers = [leftHelper, rightHelper];
       scene.add(leftAnchor, rightAnchor, leftHelper, rightHelper);
       thumbnailTarget = leftAnchor;
-      fitCameraToObjects([leftAnchor, rightAnchor]);
+      setDefaultCameraView();
       renderScene();
     },
     setBattleTransform: (side, transform) => {

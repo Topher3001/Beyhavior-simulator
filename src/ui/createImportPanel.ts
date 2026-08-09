@@ -848,7 +848,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
       elements.upAxisSelect.value = storedDesign.sourceUpAxis;
       elements.activeModelLabel.textContent = storedDesign.displayName;
       elements.resetButton.hidden = false;
-      renderStoredDesignDetails(storedDesign, elements);
+      renderDesignDetails(loadedDesign, elements);
       renderSaveControls(loadedDesign, elements, storedDesign);
       renderActivePhysicsProfile(storedDesign.physicsProfile);
       setLibraryStatus('Loaded saved design.', 'success');

@@ -73,6 +73,7 @@ Each design gets a simplified physics proxy:
 - Profile-driven friction, damping, center of mass, inertia estimate, launch RPM, launch angle, and launch position.
 - A decaying per-run spin ceiling and high-RPM gyroscopic stabilization pass to prevent contact from creating impossible spin or making tops fall over too easily.
 - Runtime launch variation for RPM, angle, position, and initial drift so repeated runs with the same saved profile are not identical.
+- Stadium-scale visual normalization: a typical 48 mm Beyblade now renders around 1.2 scene units wide against the default BX-10 stadium, instead of filling too much of the arena.
 
 This is intended to be stable and tunable rather than perfectly physically accurate.
 
