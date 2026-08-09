@@ -76,6 +76,10 @@ const MAX_TUMBLE_RADIANS_PER_SECOND = 12;
 const MAX_VISUAL_SPIN_RPM = 480;
 const BOWL_SLOPE_ACCELERATION_SCALE = 0.22;
 const CONTACT_CLEARANCE = 0.006;
+const LAUNCH_RPM_VARIATION_RATIO = 0.035;
+const LAUNCH_ANGLE_VARIATION_DEGREES = 0.65;
+const LAUNCH_POSITION_VARIATION_WORLD = 0.08;
+const LAUNCH_VELOCITY_VARIATION_WORLD_PER_SECOND = 0.14;
 const WORLD_UP = new Vector3(0, 1, 0);
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
 
@@ -234,6 +238,32 @@ export function getLaunchSettingsFromProfile(profile: PhysicsProfile, position =
     rpm: profile.defaultLaunchRpm,
     angleDegrees: profile.defaultLaunchAngleDegrees,
     position,
+  };
+}
+
+export function createVariedLaunchSettings(launchSettings: LaunchSettings, proxyGeometry: ProxyGeometry): LaunchSettings {
+  const rpmScale = 1 + centeredRandom() * LAUNCH_RPM_VARIATION_RATIO;
+  const variedPosition = getClampedLaunchPosition(
+    {
+      x: launchSettings.position.x + centeredRandom() * LAUNCH_POSITION_VARIATION_WORLD,
+      z: launchSettings.position.z + centeredRandom() * LAUNCH_POSITION_VARIATION_WORLD,
+    },
+    proxyGeometry.radiusWorld,
+  );
+  const baseLinearVelocity = launchSettings.linearVelocity ?? { x: 0, z: 0 };
+
+  return {
+    rpm: Math.max(0, launchSettings.rpm * rpmScale),
+    angleDegrees: clamp(
+      launchSettings.angleDegrees + centeredRandom() * LAUNCH_ANGLE_VARIATION_DEGREES,
+      -20,
+      30,
+    ),
+    position: variedPosition,
+    linearVelocity: {
+      x: baseLinearVelocity.x + centeredRandom() * LAUNCH_VELOCITY_VARIATION_WORLD_PER_SECOND,
+      z: baseLinearVelocity.z + centeredRandom() * LAUNCH_VELOCITY_VARIATION_WORLD_PER_SECOND,
+    },
   };
 }
 
@@ -876,6 +906,10 @@ function getBodyYOffsetForSurface(x: number, z: number): number {
 
 function wrapRadians(value: number): number {
   return ((((value + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+}
+
+function centeredRandom(): number {
+  return Math.random() + Math.random() - 1;
 }
 
 function toRapierQuaternion(quaternion: Quaternion): { x: number; y: number; z: number; w: number } {

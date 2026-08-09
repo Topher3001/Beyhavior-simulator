@@ -72,6 +72,7 @@ Each design gets a simplified physics proxy:
 - A wider ring collider and a capped set of strike-point colliders in battle mode for bey-to-bey impacts.
 - Profile-driven friction, damping, center of mass, inertia estimate, launch RPM, launch angle, and launch position.
 - A decaying per-run spin ceiling and high-RPM gyroscopic stabilization pass to prevent contact from creating impossible spin or making tops fall over too easily.
+- Runtime launch variation for RPM, angle, position, and initial drift so repeated runs with the same saved profile are not identical.
 
 This is intended to be stable and tunable rather than perfectly physically accurate.
 

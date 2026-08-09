@@ -490,6 +490,44 @@ input[type="number"] {
   margin-top: 14px;
 }
 
+.battle-audio-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #d5dce1;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 64%);
+}
+
+.checkbox-control,
+.range-control {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: #303b43;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.checkbox-control input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #238fbd;
+}
+
+.range-control {
+  justify-content: flex-end;
+}
+
+.range-control input {
+  width: min(150px, 48%);
+  accent-color: #238fbd;
+}
+
 .battle-slot {
   display: grid;
   gap: 10px;
@@ -760,8 +798,17 @@ input[type="number"] {
   .inline-control,
   .sim-button-row,
   .sim-telemetry,
-  .battle-telemetry {
+  .battle-telemetry,
+  .battle-audio-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .range-control {
+    justify-content: flex-start;
+  }
+
+  .range-control input {
+    width: 100%;
   }
 
   .results-chart {

@@ -15,6 +15,7 @@ import {
   createArenaColliders,
   createProxyGeometry,
   createTopRigidBody,
+  createVariedLaunchSettings,
   decaySpinCeilingRpm,
   getBodyTransform,
   getRingOutCandidateReason,
@@ -36,6 +37,7 @@ import type {
   BattleSlot,
   BattleTelemetry,
   BattleWinner,
+  ContactEvent,
   SimulationStopReason,
   TopTelemetry,
 } from './types';
@@ -53,9 +55,16 @@ type BattleTopState = {
   spinCeilingRpm: number;
 };
 
+type BattleSimulationCallbacks = {
+  onContact?: (event: ContactEvent) => void;
+};
+
 const SIDES: BattleSide[] = ['left', 'right'];
 
-export async function createBattleSimulation(simulatorScene: SimulatorScene): Promise<BattleSimulation> {
+export async function createBattleSimulation(
+  simulatorScene: SimulatorScene,
+  callbacks: BattleSimulationCallbacks = {},
+): Promise<BattleSimulation> {
   const rapier = await getRapier();
   let slots: Record<BattleSide, BattleSlot> | null = null;
   let world: RapierWorld | null = null;
@@ -286,7 +295,7 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
     }
 
     lastContactSeconds = elapsedSeconds;
-    traceRecorder.recordContact({
+    const contactEvent = {
       timeSeconds: elapsedSeconds,
       leftPosition: {
         x: leftTranslation.x,
@@ -301,7 +310,10 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
         leftVelocity.y - rightVelocity.y,
         leftVelocity.z - rightVelocity.z,
       ),
-    });
+    };
+
+    traceRecorder.recordContact(contactEvent);
+    callbacks.onContact?.(contactEvent);
   };
 
   return {
@@ -431,18 +443,22 @@ function createBattleTopState(
 ): BattleTopState {
   const proxyGeometry = createProxyGeometry(slot.design, slot.profile);
   const inwardDirection = slot.side === 'left' ? 1 : -1;
+  const baseLaunchSettings = {
+    ...slot.launchSettings,
+    linearVelocity: {
+      x: inwardDirection * 0.72,
+      z: slot.side === 'left' ? 0.12 : -0.12,
+    },
+  };
+  const launchSettings = withLaunchVelocity
+    ? createVariedLaunchSettings(baseLaunchSettings, proxyGeometry)
+    : baseLaunchSettings;
   const body = createTopRigidBody(
     rapier,
     world,
     slot.profile,
     proxyGeometry,
-    {
-      ...slot.launchSettings,
-      linearVelocity: {
-        x: inwardDirection * 0.72,
-        z: slot.side === 'left' ? 0.12 : -0.12,
-      },
-    },
+    launchSettings,
     withLaunchVelocity,
     {
       includeBattleRing: true,
@@ -460,7 +476,7 @@ function createBattleTopState(
     failureReason: null,
     visualSpinRadians: 0,
     spinDirection: 1,
-    spinCeilingRpm: withLaunchVelocity ? slot.launchSettings.rpm : 0,
+    spinCeilingRpm: withLaunchVelocity ? launchSettings.rpm : 0,
   };
 }
 

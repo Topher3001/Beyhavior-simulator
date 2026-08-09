@@ -403,6 +403,16 @@
                 <option value="2">2x</option>
               </select>
             </div>
+            <div class="battle-audio-controls" aria-label="Battle sound controls">
+              <label class="checkbox-control" for="battle-sound-muted">
+                <input id="battle-sound-muted" type="checkbox" />
+                <span>Mute strikes</span>
+              </label>
+              <label class="range-control" for="battle-sound-volume">
+                <span>Strike volume</span>
+                <input id="battle-sound-volume" type="range" min="0" max="1" step="0.05" value="0.55" />
+              </label>
+            </div>
             <div class="sim-button-row">
               <button id="battle-launch-button" class="button button-primary" type="button">Launch Battle</button>
               <button id="battle-pause-button" class="button" type="button">Pause</button>

@@ -1,3 +1,4 @@
+import { createStrikeAudio } from '../audio/createStrikeAudio';
 import { sanitizePhysicsProfile } from '../model/physicsProfile';
 import { getLaunchPreset, getTipPreset } from '../model/presets';
 import { createProfileExport, parseProfileExport } from '../model/profileExport';
@@ -26,6 +27,7 @@ import type {
   BattleSimulation,
   BattleSlot,
   BattleTelemetry,
+  ContactEvent,
   SimulationMetric,
   SimulationTrace,
   SimulationTelemetry,
@@ -64,6 +66,7 @@ type BattleSlotState = {
 
 export function createImportPanel(simulatorScene: SimulatorScene): void {
   const elements = getPanelElements();
+  const strikeAudio = createStrikeAudio();
   let activeDesignState: ActiveDesignState | null = null;
   let lastImportedFile: File | null = null;
   let pendingReferencePreset: ReferenceBeybladePreset | null = null;
@@ -138,6 +141,12 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   };
 
   const canUseBattle = () => Boolean(battleSimulation?.getTelemetry().ready && battleSlots.left && battleSlots.right) && !isBusy;
+
+  const syncBattleSoundControls = () => {
+    strikeAudio.setMuted(elements.battleSoundMuted.checked);
+    strikeAudio.setVolume(readNumber(elements.battleSoundVolume));
+    elements.battleSoundVolume.disabled = elements.battleSoundMuted.checked;
+  };
 
   const updateBattleControls = () => {
     const telemetry = battleSimulation?.getTelemetry();
@@ -231,6 +240,10 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     elements.battleRightStopValue.textContent = formatStopReason(telemetry?.right.stopReason ?? null);
     elements.battleResultLabel.textContent = formatBattleResult(telemetry);
     updateBattleControls();
+  };
+
+  const playBattleContact = (event: ContactEvent) => {
+    strikeAudio.playStrike(event.relativeSpeed);
   };
 
   const renderResults = () => {
@@ -502,7 +515,9 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     updateBattleControls();
 
     try {
-      const simulation = await createBattleSimulation(simulatorScene);
+      const simulation = await createBattleSimulation(simulatorScene, {
+        onContact: playBattleContact,
+      });
 
       if (token !== battlePrepareToken) {
         simulation.dispose();
@@ -529,6 +544,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   };
 
   const launchBattle = async () => {
+    void strikeAudio.prime();
     await prepareBattleForSlots();
     stopReplay();
     clearLatestTrace('Recording battle. Results update when paused or stopped.', 'loading');
@@ -1280,6 +1296,8 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   elements.battleLaunchButton.addEventListener('click', () => {
     void launchBattle();
   });
+  elements.battleSoundMuted.addEventListener('change', syncBattleSoundControls);
+  elements.battleSoundVolume.addEventListener('input', syncBattleSoundControls);
   elements.battlePauseButton.addEventListener('click', () => {
     const telemetry = battleSimulation?.getTelemetry();
 
@@ -1293,6 +1311,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     renderBattleTelemetry();
   });
   elements.battleStepButton.addEventListener('click', () => {
+    void strikeAudio.prime();
     stopReplay();
     battleSimulation?.step();
     lastBattleStatus = null;
@@ -1313,6 +1332,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     }
 
     stopReplay();
+    void strikeAudio.prime();
     clearLatestTrace('Recording battle. Results update when paused or stopped.', 'loading');
     battleSimulation?.launch();
     lastBattleStatus = null;
@@ -1440,6 +1460,9 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   });
 
   renderReferenceBeyOptions(elements);
+  elements.battleSoundMuted.checked = strikeAudio.getMuted();
+  elements.battleSoundVolume.value = String(strikeAudio.getVolume());
+  syncBattleSoundControls();
   setPhysicsUnavailable('Load or save a design.');
   setSimulationUnavailable('Load or save a design.');
   setBattleUnavailable('Select saved designs for both slots.');
@@ -1536,6 +1559,8 @@ function getPanelElements() {
     battleRightX: queryRequired<HTMLInputElement>('#battle-right-x'),
     battleRightZ: queryRequired<HTMLInputElement>('#battle-right-z'),
     battleTimeScale: queryRequired<HTMLSelectElement>('#battle-time-scale'),
+    battleSoundMuted: queryRequired<HTMLInputElement>('#battle-sound-muted'),
+    battleSoundVolume: queryRequired<HTMLInputElement>('#battle-sound-volume'),
     battleLaunchButton: queryRequired<HTMLButtonElement>('#battle-launch-button'),
     battlePauseButton: queryRequired<HTMLButtonElement>('#battle-pause-button'),
     battleStepButton: queryRequired<HTMLButtonElement>('#battle-step-button'),

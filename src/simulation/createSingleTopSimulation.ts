@@ -14,6 +14,7 @@ import {
   createArenaColliders,
   createProxyGeometry,
   createTopRigidBody,
+  createVariedLaunchSettings,
   decaySpinCeilingRpm,
   getBodyTransform,
   getLaunchSettingsFromProfile,
@@ -63,6 +64,9 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
 
     freeWorld();
     proxyGeometry = createProxyGeometry(currentDesign, currentProfile);
+    const launchSettings = withLaunchVelocity
+      ? createVariedLaunchSettings(getLaunchSettingsFromProfile(currentProfile), proxyGeometry)
+      : getLaunchSettingsFromProfile(currentProfile);
     world = new rapier.World({ x: 0, y: -9.81, z: 0 });
     world.timestep = FIXED_TIMESTEP_SECONDS;
     createArenaColliders(rapier as RapierRuntime, world);
@@ -71,7 +75,7 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
       world,
       currentProfile,
       proxyGeometry,
-      getLaunchSettingsFromProfile(currentProfile),
+      launchSettings,
       withLaunchVelocity,
     );
     accumulatorSeconds = 0;
@@ -79,7 +83,7 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
     stopCandidateSeconds = 0;
     stopCandidateReason = null;
     visualSpinRadians = 0;
-    spinCeilingRpm = withLaunchVelocity ? currentProfile.defaultLaunchRpm : 0;
+    spinCeilingRpm = withLaunchVelocity ? launchSettings.rpm : 0;
     syncSceneTransform();
   };
 
