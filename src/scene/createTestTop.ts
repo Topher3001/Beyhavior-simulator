@@ -18,7 +18,7 @@ export function createTestTop(): TestTop {
   const top = new Group();
   top.name = 'PrimitiveBeybladeTop';
   top.position.y = 0.14;
-  top.scale.setScalar(0.46);
+  top.scale.setScalar(0.35);
 
   const ringMaterial = new MeshStandardMaterial({
     color: '#d13f4b',

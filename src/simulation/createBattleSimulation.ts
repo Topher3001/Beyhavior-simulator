@@ -128,8 +128,8 @@ export async function createBattleSimulation(
       }
 
       applyProfileDamping(state.body, state.slot.profile, state.proxyGeometry, deltaSeconds);
-      applyWobbleTorque(state.body, state.proxyGeometry);
-      applyGyroscopicStability(state.body, state.proxyGeometry, deltaSeconds);
+      applyWobbleTorque(state.body, state.proxyGeometry, elapsedSeconds);
+      applyGyroscopicStability(state.body, state.proxyGeometry, deltaSeconds, elapsedSeconds);
     }
 
     world.step();
@@ -141,7 +141,7 @@ export async function createBattleSimulation(
       if (state) {
         applyArenaContainment(state.body, state.proxyGeometry);
         stabilizeTopGroundContact(state.body, state.proxyGeometry, deltaSeconds);
-        applyGyroscopicStability(state.body, state.proxyGeometry, deltaSeconds);
+        applyGyroscopicStability(state.body, state.proxyGeometry, deltaSeconds, elapsedSeconds);
         state.spinCeilingRpm = decaySpinCeilingRpm(state.spinCeilingRpm, state.slot.profile, state.proxyGeometry, deltaSeconds);
         limitTopAngularVelocity(state.body, state.spinDirection, state.spinCeilingRpm);
         state.visualSpinRadians = updateVisualSpinRadians(state.body, state.visualSpinRadians, deltaSeconds, state.spinDirection);

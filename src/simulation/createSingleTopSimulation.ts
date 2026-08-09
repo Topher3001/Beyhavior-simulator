@@ -104,12 +104,12 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
     }
 
     applyProfileDamping(topBody, currentProfile, proxyGeometry, deltaSeconds);
-    applyWobbleTorque(topBody, proxyGeometry);
-    applyGyroscopicStability(topBody, proxyGeometry, deltaSeconds);
+    applyWobbleTorque(topBody, proxyGeometry, elapsedSeconds);
+    applyGyroscopicStability(topBody, proxyGeometry, deltaSeconds, elapsedSeconds);
     world.step();
     applyArenaContainment(topBody, proxyGeometry);
     stabilizeTopGroundContact(topBody, proxyGeometry, deltaSeconds);
-    applyGyroscopicStability(topBody, proxyGeometry, deltaSeconds);
+    applyGyroscopicStability(topBody, proxyGeometry, deltaSeconds, elapsedSeconds);
     spinCeilingRpm = decaySpinCeilingRpm(spinCeilingRpm, currentProfile, proxyGeometry, deltaSeconds);
     limitTopAngularVelocity(topBody, 1, spinCeilingRpm);
     visualSpinRadians = updateVisualSpinRadians(topBody, visualSpinRadians, deltaSeconds);

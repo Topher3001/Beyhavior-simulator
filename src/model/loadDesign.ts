@@ -20,7 +20,7 @@ import {
 import type { Dimensions, LoadedDesign, SupportedDesignFileType, UpAxis } from './types';
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
-const TARGET_HORIZONTAL_SIZE = 1.2;
+const TARGET_HORIZONTAL_SIZE = 0.95;
 const ARENA_SURFACE_Y = 0.1;
 
 const generatedMaterialBase = {

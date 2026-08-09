@@ -80,6 +80,7 @@ const LAUNCH_RPM_VARIATION_RATIO = 0.035;
 const LAUNCH_ANGLE_VARIATION_DEGREES = 0.65;
 const LAUNCH_POSITION_VARIATION_WORLD = 0.08;
 const LAUNCH_VELOCITY_VARIATION_WORLD_PER_SECOND = 0.14;
+const HIGH_RPM_STABILITY_RPM = 7000;
 const WORLD_UP = new Vector3(0, 1, 0);
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
 
@@ -170,7 +171,7 @@ export function createTopRigidBody(
   withLaunchVelocity: boolean,
   options: TopRigidBodyOptions = {},
 ): RapierRigidBody {
-  const launchTiltRadians = degreesToRadians(launchSettings.angleDegrees);
+  const launchTiltRadians = degreesToRadians(getEffectiveInitialTiltDegrees(launchSettings));
   const launchRotation = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), launchTiltRadians);
   const launchPosition = getClampedLaunchPosition(launchSettings.position, proxyGeometry.radiusWorld);
   const launchSurfaceOffsetY = getBodyYOffsetForSurface(launchPosition.x, launchPosition.z);
@@ -297,17 +298,23 @@ export function decaySpinCeilingRpm(currentRpm: number, profile: PhysicsProfile,
   return Math.max(0, currentRpm * Math.exp(-spinDecayRate * deltaSeconds));
 }
 
-export function applyWobbleTorque(body: RapierRigidBody, proxyGeometry: ProxyGeometry): void {
+export function applyWobbleTorque(body: RapierRigidBody, proxyGeometry: ProxyGeometry, elapsedSeconds = Number.POSITIVE_INFINITY): void {
   const rotation = body.rotation();
   const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
   const tiltAxis = new Vector3().crossVectors(bodyUp, WORLD_UP);
+  const angularVelocity = body.angvel();
+  const spinRadiansPerSecond = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z).dot(bodyUp);
+  const spinRpm = Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
+  const highSpinStability = clamp(spinRpm / HIGH_RPM_STABILITY_RPM, 0, 1);
+  const launchSettling = clamp(elapsedSeconds / 1.6, 0, 1);
+  const wobbleReadiness = (0.06 + (1 - highSpinStability) * 0.94) * (0.18 + launchSettling * 0.82);
 
   if (tiltAxis.lengthSq() > 0.000001) {
-    tiltAxis.normalize().multiplyScalar(proxyGeometry.massKg * 9.81 * Math.max(proxyGeometry.centerOfMassWorld.y, 0.04) * 0.18);
+    tiltAxis.normalize().multiplyScalar(proxyGeometry.massKg * 9.81 * Math.max(proxyGeometry.centerOfMassWorld.y, 0.04) * 0.18 * wobbleReadiness);
     body.addTorque({ x: tiltAxis.x, y: 0, z: tiltAxis.z }, true);
   }
 
-  const offsetTorqueScale = proxyGeometry.massKg * 9.81 * 0.08;
+  const offsetTorqueScale = proxyGeometry.massKg * 9.81 * 0.08 * wobbleReadiness;
   body.addTorque(
     {
       x: proxyGeometry.centerOfMassWorld.z * offsetTorqueScale,
@@ -318,7 +325,12 @@ export function applyWobbleTorque(body: RapierRigidBody, proxyGeometry: ProxyGeo
   );
 }
 
-export function applyGyroscopicStability(body: RapierRigidBody, proxyGeometry: ProxyGeometry, deltaSeconds: number): void {
+export function applyGyroscopicStability(
+  body: RapierRigidBody,
+  proxyGeometry: ProxyGeometry,
+  deltaSeconds: number,
+  elapsedSeconds = Number.POSITIVE_INFINITY,
+): void {
   const rotation = body.rotation();
   const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
   const angularVelocity = body.angvel();
@@ -326,6 +338,7 @@ export function applyGyroscopicStability(body: RapierRigidBody, proxyGeometry: P
   const spinRadiansPerSecond = angularVelocityVector.dot(bodyUp);
   const spinRpm = Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
   const stability = clamp((spinRpm - 250) / 6500, 0, 1);
+  const launchHold = clamp(1 - elapsedSeconds / 1.75, 0, 1);
 
   if (stability <= 0) {
     return;
@@ -333,7 +346,7 @@ export function applyGyroscopicStability(body: RapierRigidBody, proxyGeometry: P
 
   const spinVector = bodyUp.clone().multiplyScalar(spinRadiansPerSecond);
   const tumbleVelocity = angularVelocityVector.sub(spinVector);
-  const tumbleDamping = Math.exp(-(1.8 + stability * 10.5) * deltaSeconds);
+  const tumbleDamping = Math.exp(-(2.4 + stability * (12.5 + launchHold * 10)) * deltaSeconds);
   const stabilizedAngularVelocity = spinVector.add(tumbleVelocity.multiplyScalar(tumbleDamping));
 
   body.setAngvel(
@@ -353,13 +366,21 @@ export function applyGyroscopicStability(body: RapierRigidBody, proxyGeometry: P
 
   const tiltDegrees = radiansToDegrees(bodyUp.angleTo(WORLD_UP));
   const rightingScale = proxyGeometry.massKg * 9.81 * Math.max(proxyGeometry.centerOfMassWorld.y, 0.04);
-  const rightingTorque = rightingScale * (0.45 + stability * 2.2) * Math.min(tiltDegrees / 42, 1);
+  const rightingTorque = rightingScale * (0.55 + stability * (2.5 + launchHold * 2.6)) * Math.min(tiltDegrees / 42, 1);
 
   tiltAxis.normalize().multiplyScalar(rightingTorque);
   body.addTorque({ x: tiltAxis.x, y: 0, z: tiltAxis.z }, true);
 
+  const flatSpinHold = stability * clamp(1 - elapsedSeconds / 5, 0, 1);
+  const maxHighSpinTiltDegrees = 2.8 + (1 - flatSpinHold) * 10;
+
+  if (tiltDegrees > maxHighSpinTiltDegrees) {
+    clampBodyTilt(body, rotation, bodyUp, maxHighSpinTiltDegrees);
+    return;
+  }
+
   if (tiltDegrees < 89.4) {
-    const correctionRate = (0.65 + stability * 4.2) * Math.min(Math.max(tiltDegrees, 1) / 24, 1.8);
+    const correctionRate = (0.85 + stability * (5.2 + launchHold * 7.5)) * Math.min(Math.max(tiltDegrees, 1) / 22, 1.8);
     const correctionAlpha = 1 - Math.exp(-correctionRate * deltaSeconds);
     const currentRotation = new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
     const fullCorrection = new Quaternion().setFromUnitVectors(bodyUp, WORLD_UP);
@@ -368,6 +389,26 @@ export function applyGyroscopicStability(body: RapierRigidBody, proxyGeometry: P
 
     body.setRotation(toRapierQuaternion(correctedRotation), true);
   }
+}
+
+function clampBodyTilt(
+  body: RapierRigidBody,
+  rotation: { x: number; y: number; z: number; w: number },
+  bodyUp: Vector3,
+  maxTiltDegrees: number,
+): void {
+  const tiltAxis = new Vector3().crossVectors(WORLD_UP, bodyUp);
+
+  if (tiltAxis.lengthSq() <= 0.000001) {
+    return;
+  }
+
+  const currentRotation = new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
+  const desiredUp = WORLD_UP.clone().applyAxisAngle(tiltAxis.normalize(), degreesToRadians(maxTiltDegrees));
+  const correction = new Quaternion().setFromUnitVectors(bodyUp, desiredUp);
+  const correctedRotation = correction.multiply(currentRotation).normalize();
+
+  body.setRotation(toRapierQuaternion(correctedRotation), true);
 }
 
 export function limitTopAngularVelocity(body: RapierRigidBody, spinDirection: 1 | -1 = 1, maxSpinRpm = MAX_SPIN_RPM): void {
@@ -868,6 +909,16 @@ function estimateCylinderInertia(massKg: number, radiusWorld: number, heightWorl
     spinAxis: 0.5 * massKg * radiusWorld ** 2,
     crossAxis: (massKg * (3 * radiusWorld ** 2 + heightWorld ** 2)) / 12,
   };
+}
+
+function getEffectiveInitialTiltDegrees(launchSettings: LaunchSettings): number {
+  const sign = Math.sign(launchSettings.angleDegrees) || 1;
+  const absoluteAngle = Math.abs(launchSettings.angleDegrees);
+  const spinStability = clamp(launchSettings.rpm / HIGH_RPM_STABILITY_RPM, 0, 1);
+  const retainedTiltRatio = 0.64 - spinStability * 0.34;
+  const highSpinTiltCap = 2.2 + (1 - spinStability) * 4.8;
+
+  return sign * Math.min(absoluteAngle * retainedTiltRatio, highSpinTiltCap);
 }
 
 function getLaunchAngularVelocity(launchSettings: LaunchSettings, launchRotation: Quaternion, spinDirection: 1 | -1): { x: number; y: number; z: number } {
