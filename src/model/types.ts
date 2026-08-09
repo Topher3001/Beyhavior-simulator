@@ -23,6 +23,12 @@ export type LaunchPosition = {
 
 export type TipType = 'flat' | 'sharp' | 'ball' | 'rubber' | 'custom';
 
+export type ContactProfile = {
+  attackPoints: number;
+  attackBias: number;
+  recoilCoefficient: number;
+};
+
 export type PhysicsProfile = {
   weightGrams: number;
   radiusMm: number;
@@ -36,6 +42,7 @@ export type PhysicsProfile = {
   defaultLaunchRpm: number;
   defaultLaunchAngleDegrees: number;
   defaultLaunchPosition: LaunchPosition;
+  contactProfile: ContactProfile;
   updatedAt: string;
 };
 

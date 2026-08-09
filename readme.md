@@ -10,11 +10,12 @@ The simulator currently supports:
 
 - A full-window 3D arena with orbit camera controls, lighting, and a visible stadium boundary.
 - STL and OBJ imports for visual Beyblade design files, including centering, scaling, bounds display, and thumbnails.
+- Built-in reference Beyblade test models with sourced dimensions, weights, launch defaults, and contact profiles for repeatable calibration.
 - A local design library using IndexedDB, with save, load, rename, and delete actions.
-- Editable physics profiles for saved designs, including weight, radius, height, center of mass, tip type, friction, damping, and launch defaults.
+- Editable physics profiles for saved designs, including weight, radius, height, center of mass, tip type, friction, damping, strike/contact shape, and launch defaults.
 - Live center-of-mass visualization and reusable tip and launch presets for faster tuning.
 - Single-top Rapier simulation with launch, pause, step, reset, telemetry, damping, wobble, stop detection, and replay traces.
-- Two-bey battle simulation with left/right design slots, simplified collisions, ring-out and stop detection, winner/draw results, and local result history.
+- Two-bey battle simulation with left/right design slots, contact-point proxy collisions, ring-out and stop detection, winner/draw results, and local result history.
 - Results analysis with charts, replay controls, contact event markers, and profile JSON export/import.
 
 ## Running Locally
@@ -68,21 +69,28 @@ Each design gets a simplified physics proxy:
 - A dynamic rigid body with explicit mass properties.
 - A cylinder-like body collider.
 - A small tip collider for stadium contact.
-- A wider ring collider in battle mode for bey-to-bey impacts.
+- A wider ring collider and configurable strike-point colliders in battle mode for bey-to-bey impacts.
 - Profile-driven friction, damping, center of mass, inertia estimate, launch RPM, launch angle, and launch position.
 
 This is intended to be stable and tunable rather than perfectly physically accurate.
 
 ## Stadium Behavior
 
-The arena uses a fixed floor collider and segmented fixed rim colliders. Recent stability tuning prevents the stadium from behaving like a trampoline:
+The arena uses a fixed floor collider, visible tornado ridge, segmented fixed rim colliders, and pocket openings based on reference stadium dimensions. Recent stability tuning prevents the stadium from behaving like a trampoline:
 
 - Floor and tip restitution are set to zero.
 - Rim, body, and battle-ring restitution are kept very low.
 - The broad body/ring collider is raised so normal spinning contact is primarily through the tip.
 - A ground-contact stabilizer caps upward velocity and prevents vertical energy runaway.
+- KO gaps and pocket openings are modeled as missing rim segments instead of a perfectly circular wall.
 
 If a top starts bouncing again, first check high launch angles, extreme center-of-mass offsets, very large radius/height values, or custom friction/damping settings.
+
+Reference dimension notes live in:
+
+```text
+docs/reference-dimensions-and-calibration.md
+```
 
 ## Storage
 

@@ -9,22 +9,27 @@
   <body>
     <main id="app" aria-label="Beyblade physics simulator viewport">
       <section class="status-panel" aria-label="Prototype status">
-        <p class="eyebrow">Phase 7</p>
+        <p class="eyebrow">Current Capabilities</p>
         <h1>Beyblade Physics Simulator</h1>
         <dl>
           <div>
-            <dt>Scene</dt>
-            <dd>Calibration</dd>
+            <dt>Library</dt>
+            <dd>STL/OBJ Import</dd>
           </div>
           <div>
-            <dt>Model</dt>
+            <dt>Active</dt>
             <dd id="active-model-label">Demo Top</dd>
           </div>
           <div>
-            <dt>Controls</dt>
-            <dd>Orbit Camera</dd>
+            <dt>Modes</dt>
+            <dd>Sim + Battle</dd>
           </div>
         </dl>
+        <div class="stadium-control">
+          <label for="stadium-preset-select">Stadium</label>
+          <select id="stadium-preset-select" name="stadium-preset-select"></select>
+          <p id="stadium-preset-summary">Current Beyblade X standard.</p>
+        </div>
       </section>
       <section class="import-panel" aria-labelledby="import-panel-title">
         <div class="panel-heading">
@@ -69,6 +74,15 @@
             </label>
             <button id="load-sample-button" class="button" type="button">Load Sample STL</button>
             <button id="reset-demo-button" class="button" type="button" hidden>Reset Demo</button>
+          </div>
+
+          <div class="reference-loader">
+            <label for="reference-bey-select">Reference bey</label>
+            <div class="inline-control">
+              <select id="reference-bey-select" name="reference-bey-select"></select>
+              <button id="load-reference-bey-button" class="button" type="button">Load</button>
+            </div>
+            <p id="reference-bey-summary" class="reference-summary">Measured test profiles for repeatable calibration.</p>
           </div>
 
           <p id="import-status" class="import-status" role="status">Ready for STL or OBJ.</p>
@@ -167,6 +181,20 @@
                 <label>
                   <span>Ring friction</span>
                   <input id="physics-ring-friction" type="number" min="0" step="0.01" inputmode="decimal" />
+                </label>
+              </div>
+              <div class="physics-grid">
+                <label>
+                  <span>Attack points</span>
+                  <input id="physics-attack-points" type="number" min="1" max="12" step="1" inputmode="numeric" />
+                </label>
+                <label>
+                  <span>Attack bias</span>
+                  <input id="physics-attack-bias" type="number" min="0" max="1" step="0.01" inputmode="decimal" />
+                </label>
+                <label>
+                  <span>Recoil</span>
+                  <input id="physics-recoil" type="number" min="0" max="1" step="0.01" inputmode="decimal" />
                 </label>
               </div>
             </div>

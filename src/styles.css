@@ -51,7 +51,7 @@ body {
   background: rgb(246 248 249 / 82%);
   box-shadow: 0 18px 48px rgb(32 42 50 / 16%);
   backdrop-filter: blur(12px);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .import-panel {
@@ -143,6 +143,28 @@ h1 {
   margin: 14px 0 0;
 }
 
+.stadium-control {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #d5dce1;
+}
+
+.stadium-control label {
+  color: #303b43;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.stadium-control p {
+  margin: 0;
+  color: #64717a;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 dt {
   color: #64717a;
   font-size: 0.68rem;
@@ -216,6 +238,28 @@ input[type="number"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+}
+
+.reference-loader {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #d5dce1;
+}
+
+.reference-loader > label {
+  color: #303b43;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.reference-summary {
+  margin: 0;
+  color: #64717a;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .button-row {

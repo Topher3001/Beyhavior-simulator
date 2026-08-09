@@ -48,7 +48,7 @@ export async function getStoredDesign(id: string): Promise<StoredDesign | undefi
 
     const storedDesign = ensureStoredDesign(record);
 
-    if (!record.physicsProfile) {
+    if (needsPhysicsProfileBackfill(record)) {
       await requestToPromise(store.put(storedDesign));
     }
 
@@ -290,11 +290,8 @@ function backfillPhysicsProfiles(store: IDBObjectStore): void {
 
     const record = cursor.value as StoredDesignRecord;
 
-    if (!record.physicsProfile) {
-      void cursor.update({
-        ...record,
-        physicsProfile: createDefaultPhysicsProfile(record, record.updatedAt),
-      });
+    if (needsPhysicsProfileBackfill(record)) {
+      void cursor.update(ensureStoredDesign(record));
     }
 
     cursor.continue();
@@ -353,10 +350,21 @@ function sanitizeDisplayName(displayName: string): string {
 }
 
 function ensureStoredDesign(design: StoredDesignRecord): StoredDesign {
+  const physicsProfile = mergePhysicsProfile(
+    design,
+    design.physicsProfile,
+    {},
+    design.physicsProfile?.updatedAt ?? design.updatedAt,
+  );
+
   return {
     ...design,
-    physicsProfile: design.physicsProfile ?? createDefaultPhysicsProfile(design, design.updatedAt),
+    physicsProfile,
   };
+}
+
+function needsPhysicsProfileBackfill(design: StoredDesignRecord): boolean {
+  return !design.physicsProfile || !design.physicsProfile.contactProfile;
 }
 
 function toStoredDesignMetadata(design: StoredDesign): StoredDesignMetadata {

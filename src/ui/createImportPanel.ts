@@ -11,6 +11,12 @@ import type {
 } from '../model/types';
 import { loadDesignFile } from '../model/loadDesign';
 import { createSampleStlFile } from '../model/sampleStl';
+import {
+  createReferenceBeybladeFile,
+  getReferenceBeybladePreset,
+  REFERENCE_BEYBLADE_PRESETS,
+  type ReferenceBeybladePreset,
+} from '../model/referenceBeyblades';
 import type { SimulatorScene } from '../scene/createScene';
 import { createBattleSimulation } from '../simulation/createBattleSimulation';
 import { createSingleTopSimulation } from '../simulation/createSingleTopSimulation';
@@ -60,6 +66,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
   const elements = getPanelElements();
   let activeDesignState: ActiveDesignState | null = null;
   let lastImportedFile: File | null = null;
+  let pendingReferencePreset: ReferenceBeybladePreset | null = null;
   let savedDesigns: StoredDesignMetadata[] = [];
   let activeTab: DesignTab = 'import';
   let singleTopSimulation: SingleTopSimulation | null = null;
@@ -599,6 +606,8 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     isBusy = busy;
     elements.fileInput.disabled = busy;
     elements.sampleButton.disabled = busy;
+    elements.referenceBeySelect.disabled = busy;
+    elements.referenceBeyButton.disabled = busy;
     elements.resetButton.disabled = busy;
     elements.upAxisSelect.disabled = busy;
     elements.saveButton.disabled = busy || !activeDesignState || Boolean(activeDesignState.storedId) || elements.saveNameInput.value.trim().length === 0;
@@ -692,12 +701,16 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     }
   };
 
-  const importFile = async (file: File) => {
+  const importFile = async (file: File, referencePreset: ReferenceBeybladePreset | null = null) => {
     if (isBusy) {
       return;
     }
 
-    const upAxis = elements.upAxisSelect.value as UpAxis;
+    const upAxis = referencePreset ? 'z' : (elements.upAxisSelect.value as UpAxis);
+
+    if (referencePreset) {
+      elements.upAxisSelect.value = 'z';
+    }
 
     setBusy(true);
     setImportStatus(`Importing ${file.name}...`, 'loading');
@@ -718,14 +731,21 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
         storedId: null,
         physicsProfile: null,
       };
-      lastImportedFile = file;
+      lastImportedFile = referencePreset ? null : file;
+      pendingReferencePreset = referencePreset;
 
       renderDesignDetails(design, elements);
       renderSaveControls(design, elements, null);
-      elements.activeModelLabel.textContent = design.fileName;
+      if (referencePreset) {
+        elements.saveNameInput.value = referencePreset.displayName;
+      }
+      elements.activeModelLabel.textContent = referencePreset?.displayName ?? design.fileName;
       elements.resetButton.hidden = false;
       setPhysicsUnavailable('Save this design before editing physics.');
-      setImportStatus('Imported visual model. Unsaved.', 'success');
+      setImportStatus(
+        referencePreset ? `Loaded ${referencePreset.displayName} reference model. Save to add its test profile.` : 'Imported visual model. Unsaved.',
+        'success',
+      );
       renderLibrary(savedDesigns, elements, null);
     } catch (error) {
       setImportStatus(getErrorMessage(error, 'Unable to import this file.'), 'error');
@@ -744,17 +764,22 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     setImportStatus('Saving design...', 'loading');
 
     try {
-      const metadata = await saveStoredDesign(
+      let metadata = await saveStoredDesign(
         activeDesignState.design,
         activeDesignState.fileBlob,
         elements.saveNameInput.value,
       );
+
+      if (pendingReferencePreset) {
+        metadata = await updatePhysicsProfile(metadata.id, pendingReferencePreset.profile);
+      }
 
       activeDesignState = {
         ...activeDesignState,
         storedId: metadata.id,
         physicsProfile: metadata.physicsProfile,
       };
+      pendingReferencePreset = null;
 
       elements.activeModelLabel.textContent = metadata.displayName;
       renderSaveControls(activeDesignState.design, elements, metadata);
@@ -802,6 +827,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
         physicsProfile: storedDesign.physicsProfile,
       };
       lastImportedFile = null;
+      pendingReferencePreset = null;
 
       elements.upAxisSelect.value = storedDesign.sourceUpAxis;
       elements.activeModelLabel.textContent = storedDesign.displayName;
@@ -893,7 +919,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     let profile: PhysicsProfile;
 
     try {
-      profile = readPhysicsProfileFromForm(elements, activeDesignState.physicsProfile.updatedAt);
+      profile = readPhysicsProfileFromForm(elements, activeDesignState.physicsProfile);
     } catch (error) {
       setPhysicsStatus(getErrorMessage(error, 'Check the profile values.'), 'error');
       return;
@@ -1031,7 +1057,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     }
 
     try {
-      const profile = readPhysicsProfileFromForm(elements, activeDesignState.physicsProfile.updatedAt);
+      const profile = readPhysicsProfileFromForm(elements, activeDesignState.physicsProfile);
       if (activeTab === 'physics' && singleTopSimulation?.getTelemetry().status !== 'running') {
         simulatorScene.setCenterOfMassMarker(profile.centerOfMassOffsetMm, activeDesignState.design);
       }
@@ -1053,6 +1079,7 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
     simulatorScene.clearCenterOfMassMarker();
     activeDesignState = null;
     lastImportedFile = null;
+    pendingReferencePreset = null;
     elements.activeModelLabel.textContent = 'Demo Top';
     elements.designDetails.hidden = true;
     elements.thumbnail.removeAttribute('src');
@@ -1159,6 +1186,19 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
 
   elements.sampleButton.addEventListener('click', () => {
     void importFile(createSampleStlFile());
+  });
+  elements.referenceBeySelect.addEventListener('change', () => {
+    renderReferenceBeySummary(elements);
+  });
+  elements.referenceBeyButton.addEventListener('click', () => {
+    const preset = getReferenceBeybladePreset(elements.referenceBeySelect.value);
+
+    if (!preset) {
+      setImportStatus('Choose a valid reference bey.', 'error');
+      return;
+    }
+
+    void importFile(createReferenceBeybladeFile(preset), preset);
   });
 
   elements.resetButton.addEventListener('click', () => resetToDemo());
@@ -1380,7 +1420,26 @@ export function createImportPanel(simulatorScene: SimulatorScene): void {
 
     void deleteBattleHistoryResult(actionElement.dataset.resultId);
   });
+  window.addEventListener('stadiumchange', () => {
+    const hadSingleSimulation = Boolean(singleTopSimulation);
+    const hadBattleSimulation = Boolean(battleSimulation);
 
+    stopReplay();
+    clearLatestTrace('Stadium changed. Run a new test to record results.', 'idle');
+    disposeSimulation('Stadium changed. Preparing the selected stadium...');
+    disposeBattleSimulation('Stadium changed. Launch after the new stadium loads.');
+
+    if (hadBattleSimulation && battleSlots.left && battleSlots.right) {
+      void prepareBattleForSlots();
+      return;
+    }
+
+    if (hadSingleSimulation && activeDesignState?.storedId && activeDesignState.physicsProfile) {
+      void prepareSimulationForActiveDesign();
+    }
+  });
+
+  renderReferenceBeyOptions(elements);
   setPhysicsUnavailable('Load or save a design.');
   setSimulationUnavailable('Load or save a design.');
   setBattleUnavailable('Select saved designs for both slots.');
@@ -1405,6 +1464,9 @@ function getPanelElements() {
     resultsPane: queryRequired<HTMLElement>('#results-pane'),
     fileInput: queryRequired<HTMLInputElement>('#design-file-input'),
     sampleButton: queryRequired<HTMLButtonElement>('#load-sample-button'),
+    referenceBeySelect: queryRequired<HTMLSelectElement>('#reference-bey-select'),
+    referenceBeyButton: queryRequired<HTMLButtonElement>('#load-reference-bey-button'),
+    referenceBeySummary: queryRequired<HTMLElement>('#reference-bey-summary'),
     resetButton: queryRequired<HTMLButtonElement>('#reset-demo-button'),
     upAxisSelect: queryRequired<HTMLSelectElement>('#up-axis'),
     importStatus: queryRequired<HTMLElement>('#import-status'),
@@ -1434,6 +1496,9 @@ function getPanelElements() {
     physicsTipType: queryRequired<HTMLSelectElement>('#physics-tip-type'),
     physicsTipFriction: queryRequired<HTMLInputElement>('#physics-tip-friction'),
     physicsRingFriction: queryRequired<HTMLInputElement>('#physics-ring-friction'),
+    physicsAttackPoints: queryRequired<HTMLInputElement>('#physics-attack-points'),
+    physicsAttackBias: queryRequired<HTMLInputElement>('#physics-attack-bias'),
+    physicsRecoil: queryRequired<HTMLInputElement>('#physics-recoil'),
     physicsAirDrag: queryRequired<HTMLInputElement>('#physics-air-drag'),
     physicsSpinDamping: queryRequired<HTMLInputElement>('#physics-spin-damping'),
     physicsLaunchPreset: queryRequired<HTMLSelectElement>('#physics-launch-preset'),
@@ -1509,6 +1574,30 @@ function getPanelElements() {
     normalizedDimensions: queryRequired<HTMLElement>('#detail-normalized-dimensions'),
     scaleFactor: queryRequired<HTMLElement>('#detail-scale-factor'),
   };
+}
+
+function renderReferenceBeyOptions(elements: ReturnType<typeof getPanelElements>): void {
+  elements.referenceBeySelect.replaceChildren();
+
+  for (const preset of REFERENCE_BEYBLADE_PRESETS) {
+    const option = document.createElement('option');
+    option.value = preset.id;
+    option.textContent = preset.displayName;
+    elements.referenceBeySelect.append(option);
+  }
+
+  renderReferenceBeySummary(elements);
+}
+
+function renderReferenceBeySummary(elements: ReturnType<typeof getPanelElements>): void {
+  const preset = getReferenceBeybladePreset(elements.referenceBeySelect.value);
+
+  if (!preset) {
+    elements.referenceBeySummary.textContent = 'Measured test profiles for repeatable calibration.';
+    return;
+  }
+
+  elements.referenceBeySummary.textContent = `${preset.dimensions.diameterMm.toFixed(2)} mm diameter, ${preset.dimensions.totalWeightGrams.toFixed(1)} g, ${preset.profile.contactProfile.attackPoints} strike points.`;
 }
 
 function renderLibrary(
@@ -1997,6 +2086,9 @@ function renderPhysicsProfile(profile: PhysicsProfile, elements: ReturnType<type
   elements.physicsTipType.value = profile.tipType;
   elements.physicsTipFriction.value = formatInputNumber(profile.tipFrictionCoefficient);
   elements.physicsRingFriction.value = formatInputNumber(profile.ringFrictionCoefficient);
+  elements.physicsAttackPoints.value = formatInputNumber(profile.contactProfile.attackPoints);
+  elements.physicsAttackBias.value = formatInputNumber(profile.contactProfile.attackBias);
+  elements.physicsRecoil.value = formatInputNumber(profile.contactProfile.recoilCoefficient);
   elements.physicsAirDrag.value = formatInputNumber(profile.airDragCoefficient);
   elements.physicsSpinDamping.value = formatInputNumber(profile.spinDampingCoefficient);
   elements.physicsLaunchRpm.value = formatInputNumber(profile.defaultLaunchRpm);
@@ -2007,7 +2099,7 @@ function renderPhysicsProfile(profile: PhysicsProfile, elements: ReturnType<type
 
 function readPhysicsProfileFromForm(
   elements: ReturnType<typeof getPanelElements>,
-  updatedAt: string,
+  currentProfile: PhysicsProfile,
 ): PhysicsProfile {
   return sanitizePhysicsProfile({
     weightGrams: readNumber(elements.physicsWeight),
@@ -2021,6 +2113,11 @@ function readPhysicsProfileFromForm(
     tipType: elements.physicsTipType.value as TipType,
     tipFrictionCoefficient: readNumber(elements.physicsTipFriction),
     ringFrictionCoefficient: readNumber(elements.physicsRingFriction),
+    contactProfile: {
+      attackPoints: readNumber(elements.physicsAttackPoints),
+      attackBias: readNumber(elements.physicsAttackBias),
+      recoilCoefficient: readNumber(elements.physicsRecoil),
+    },
     airDragCoefficient: readNumber(elements.physicsAirDrag),
     spinDampingCoefficient: readNumber(elements.physicsSpinDamping),
     defaultLaunchRpm: readNumber(elements.physicsLaunchRpm),
@@ -2029,7 +2126,7 @@ function readPhysicsProfileFromForm(
       x: readNumber(elements.physicsLaunchX),
       z: readNumber(elements.physicsLaunchZ),
     },
-    updatedAt,
+    updatedAt: currentProfile.updatedAt,
   });
 }
 
@@ -2046,6 +2143,7 @@ function getComparablePhysicsProfile(profile: PhysicsProfile) {
     tipType: profile.tipType,
     tipFrictionCoefficient: profile.tipFrictionCoefficient,
     ringFrictionCoefficient: profile.ringFrictionCoefficient,
+    contactProfile: profile.contactProfile,
     airDragCoefficient: profile.airDragCoefficient,
     spinDampingCoefficient: profile.spinDampingCoefficient,
     defaultLaunchRpm: profile.defaultLaunchRpm,

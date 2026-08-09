@@ -22,6 +22,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { LoadedDesign, Vector3Mm } from '../model/types';
+import { setActiveStadiumPreset, type StadiumPreset } from '../simulation/stadiumConfig';
 import type { BattleSide, SimulationTransform } from '../simulation/types';
 import { createArena } from './createArena';
 import { createTestTop } from './createTestTop';
@@ -30,6 +31,7 @@ type FrameUpdateCallback = (deltaSeconds: number, elapsedSeconds: number) => voi
 
 export type SimulatorScene = {
   start: () => void;
+  setStadiumPreset: (presetId: string) => StadiumPreset;
   setImportedDesign: (design: LoadedDesign) => void;
   resetToDemoTop: () => void;
   setFrameUpdate: (callback: FrameUpdateCallback | null) => void;
@@ -91,7 +93,7 @@ export function createScene(container: HTMLElement): SimulatorScene {
   keyLight.shadow.camera.bottom = -7;
   scene.add(keyLight);
 
-  const arena = createArena();
+  let arena = createArena();
   scene.add(arena);
 
   const testTop = createTestTop();
@@ -271,6 +273,16 @@ export function createScene(container: HTMLElement): SimulatorScene {
       clock.start();
       render();
     },
+    setStadiumPreset: (presetId) => {
+      const preset = setActiveStadiumPreset(presetId);
+      scene.remove(arena);
+      disposeObject(arena);
+      arena = createArena(preset);
+      scene.add(arena);
+      renderScene();
+
+      return preset;
+    },
     setImportedDesign: (design) => {
       removeBattleDesigns();
       removeImportedDesign();
@@ -428,6 +440,10 @@ export function createScene(container: HTMLElement): SimulatorScene {
       window.cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
       removeImportedDesign();
+      removeBattleDesigns();
+      scene.remove(arena);
+      disposeObject(arena);
+      disposeObject(testTop.object);
       controls.dispose();
       renderer.dispose();
       renderer.domElement.remove();

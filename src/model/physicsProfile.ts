@@ -9,6 +9,7 @@ import type {
 export type PhysicsProfilePatch = Partial<Omit<PhysicsProfile, 'updatedAt'>> & {
   centerOfMassOffsetMm?: Partial<PhysicsProfile['centerOfMassOffsetMm']>;
   defaultLaunchPosition?: Partial<PhysicsProfile['defaultLaunchPosition']>;
+  contactProfile?: Partial<PhysicsProfile['contactProfile']>;
 };
 
 type ProfileSource = Pick<LoadedDesign | StoredDesign, 'normalizedDimensions' | 'rawDimensions' | 'scaleFactor'>;
@@ -20,6 +21,11 @@ const FALLBACK_ORIENTED_DIMENSIONS: Dimensions = {
 };
 
 const TIP_TYPES: TipType[] = ['flat', 'sharp', 'ball', 'rubber', 'custom'];
+const DEFAULT_CONTACT_PROFILE: PhysicsProfile['contactProfile'] = {
+  attackPoints: 4,
+  attackBias: 0.45,
+  recoilCoefficient: 0.35,
+};
 
 export function createDefaultPhysicsProfile(source: ProfileSource, updatedAt = new Date().toISOString()): PhysicsProfile {
   const orientedDimensions = getOrientedSourceDimensions(source);
@@ -46,6 +52,7 @@ export function createDefaultPhysicsProfile(source: ProfileSource, updatedAt = n
       x: 0,
       z: 0,
     },
+    contactProfile: DEFAULT_CONTACT_PROFILE,
     updatedAt,
   };
 }
@@ -73,6 +80,11 @@ export function mergePhysicsProfile(
       ...current.defaultLaunchPosition,
       ...patch.defaultLaunchPosition,
     },
+    contactProfile: {
+      ...defaults.contactProfile,
+      ...current.contactProfile,
+      ...patch.contactProfile,
+    },
     updatedAt,
   });
 }
@@ -98,6 +110,7 @@ export function sanitizePhysicsProfile(profile: PhysicsProfile): PhysicsProfile 
       x: requireFiniteNumber(profile.defaultLaunchPosition.x, 'Launch position X must be a number.'),
       z: requireFiniteNumber(profile.defaultLaunchPosition.z, 'Launch position Z must be a number.'),
     },
+    contactProfile: sanitizeContactProfile(profile.contactProfile),
     updatedAt: profile.updatedAt,
   };
 }
@@ -152,4 +165,18 @@ function roundProfileValue(value: number): number {
 
 function isTipType(value: TipType): value is TipType {
   return TIP_TYPES.includes(value);
+}
+
+function sanitizeContactProfile(profile: PhysicsProfile['contactProfile'] | undefined): PhysicsProfile['contactProfile'] {
+  const candidate = profile ?? DEFAULT_CONTACT_PROFILE;
+
+  return {
+    attackPoints: Math.round(clamp(requireFiniteNumber(candidate.attackPoints, 'Attack points must be a number.'), 1, 12)),
+    attackBias: clamp(requireFiniteNumber(candidate.attackBias, 'Attack bias must be a number.'), 0, 1),
+    recoilCoefficient: clamp(requireFiniteNumber(candidate.recoilCoefficient, 'Recoil coefficient must be a number.'), 0, 1),
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

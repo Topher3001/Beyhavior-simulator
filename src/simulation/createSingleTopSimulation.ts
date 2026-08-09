@@ -115,7 +115,8 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
       return;
     }
 
-    const reason = getStopCandidateReason(telemetry.spinRpm, telemetry.tiltDegrees, telemetry.radialDistance);
+    const topTelemetry = calculateTopTelemetry(topBody, telemetry.stopReason);
+    const reason = getStopCandidateReason(topTelemetry.spinRpm, topTelemetry.tiltDegrees, topTelemetry.radialDistance, topTelemetry.position);
 
     if (!reason) {
       stopCandidateSeconds = 0;

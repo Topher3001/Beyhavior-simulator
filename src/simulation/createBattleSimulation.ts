@@ -169,7 +169,7 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
       }
 
       const topTelemetry = calculateTopTelemetry(state.body, state.failureReason);
-      const ringOutReason = getRingOutCandidateReason(topTelemetry.radialDistance);
+      const ringOutReason = getRingOutCandidateReason(topTelemetry.radialDistance, topTelemetry.position);
 
       if (ringOutReason) {
         state.ringOutCandidateSeconds += deltaSeconds;
@@ -178,7 +178,7 @@ export async function createBattleSimulation(simulatorScene: SimulatorScene): Pr
       }
 
       const measuredSpinRpm = state.slot.launchSettings.rpm < STOP_RPM_THRESHOLD ? state.slot.launchSettings.rpm : topTelemetry.spinRpm;
-      const stopReason = getStopCandidateReason(measuredSpinRpm, topTelemetry.tiltDegrees, 0);
+      const stopReason = getStopCandidateReason(measuredSpinRpm, topTelemetry.tiltDegrees, topTelemetry.radialDistance, topTelemetry.position);
 
       if (stopReason && stopReason !== 'arena_exit') {
         state.stopCandidateSeconds += deltaSeconds;
