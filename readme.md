@@ -79,12 +79,12 @@ This is intended to be stable and tunable rather than perfectly physically accur
 
 ## Stadium Behavior
 
-The arena uses a visibly bowl-shaped floor mesh with a low central basin, steeper banked outer rim, rounded lip, visible tornado ridge, segmented fixed rim colliders, and pocket openings based on reference stadium dimensions. The floor itself is handled by a lightweight analytic bowl-height contact model instead of a Rapier trimesh collider, which keeps battles smoother while still making tops ride the selected stadium shape.
+The arena uses a visibly bowl-shaped floor mesh with a low central basin, steeper banked outer rim, smooth curved visual walls, rounded lip arcs, visible tornado ridge, faint translucent dome guides for zoomed-out scale, segmented fixed rim colliders, and pocket openings based on reference stadium dimensions. The floor itself is handled by a lightweight analytic bowl-height contact model instead of a Rapier trimesh collider, which keeps battles smoother while still making tops ride the selected stadium shape.
 
 - Tip restitution is set to zero, and floor contact is clamped by the analytic bowl surface.
 - Simulation launch height and ground-contact stabilization follow the selected bowl surface.
 - Tip, lower blade, and ring underside contact samples are checked against the bowl so tilted beys rest on the stadium instead of sinking through it.
-- Bowl slope forces nudge tops inward as they climb the dish.
+- Bowl slope forces nudge tops inward as they climb the dish, while contact friction and a spin/tilt-aware drift budget prevent declining RPM from producing runaway travel speed.
 - Rim, body, and battle-ring restitution are kept very low.
 - The broad body/ring collider is raised so normal spinning contact is primarily through the tip.
 - A ground-contact stabilizer caps upward velocity and prevents vertical energy runaway.

@@ -74,7 +74,7 @@ const MAX_UPWARD_SPEED = 0.28;
 const MAX_SPIN_RPM = 12500;
 const MAX_TUMBLE_RADIANS_PER_SECOND = 12;
 const MAX_VISUAL_SPIN_RPM = 480;
-const BOWL_SLOPE_ACCELERATION_SCALE = 0.22;
+const BOWL_SLOPE_ACCELERATION_SCALE = 0.08;
 const CONTACT_CLEARANCE = 0.006;
 const LAUNCH_RPM_VARIATION_RATIO = 0.035;
 const LAUNCH_ANGLE_VARIATION_DEGREES = 0.65;
@@ -271,7 +271,18 @@ export function createVariedLaunchSettings(launchSettings: LaunchSettings, proxy
 export function applyProfileDamping(body: RapierRigidBody, profile: PhysicsProfile, proxyGeometry: ProxyGeometry, deltaSeconds: number): void {
   const linearVelocity = body.linvel();
   const horizontalDrag = Math.exp(-(0.025 + profile.airDragCoefficient * 1.2 + proxyGeometry.tipFriction * 0.01) * deltaSeconds);
-  const horizontalVelocity = new Vector3(linearVelocity.x * horizontalDrag, 0, linearVelocity.z * horizontalDrag);
+  let horizontalVelocity = new Vector3(linearVelocity.x * horizontalDrag, 0, linearVelocity.z * horizontalDrag);
+  const energyLimitedHorizontalVelocity = limitHorizontalSpeedBySpinEnergy(
+    body,
+    proxyGeometry,
+    { bladeContactStrength: 0 },
+    horizontalVelocity.x,
+    horizontalVelocity.z,
+    deltaSeconds,
+    1.45,
+  );
+
+  horizontalVelocity = new Vector3(energyLimitedHorizontalVelocity.x, 0, energyLimitedHorizontalVelocity.z);
 
   if (horizontalVelocity.length() > MAX_HORIZONTAL_SPEED) {
     horizontalVelocity.setLength(MAX_HORIZONTAL_SPEED);
@@ -532,10 +543,28 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
   if (contactStrength > 0) {
     const gradient = getStadiumSurfaceGradientAt(surfaceContact.supportX, surfaceContact.supportZ, stadium);
     const accelerationScale = 9.81 * BOWL_SLOPE_ACCELERATION_SCALE * contactStrength;
-    const floorDrag = Math.exp(-(stadium.floorFriction * 10 + proxyGeometry.tipFriction * 0.055 + surfaceContact.bladeContactStrength * 0.18) * deltaSeconds);
+    const floorDrag = Math.exp(
+      -(
+        0.34
+        + stadium.floorFriction * 18
+        + proxyGeometry.tipFriction * 0.42
+        + surfaceContact.bladeContactStrength * 1.4
+      ) * contactStrength * deltaSeconds,
+    );
 
     nextVelocityX = (nextVelocityX - gradient.x * accelerationScale * deltaSeconds) * floorDrag;
     nextVelocityZ = (nextVelocityZ - gradient.z * accelerationScale * deltaSeconds) * floorDrag;
+    const limitedHorizontalVelocity = limitHorizontalSpeedBySpinEnergy(
+      body,
+      proxyGeometry,
+      surfaceContact,
+      nextVelocityX,
+      nextVelocityZ,
+      deltaSeconds,
+    );
+
+    nextVelocityX = limitedHorizontalVelocity.x;
+    nextVelocityZ = limitedHorizontalVelocity.z;
 
     const horizontalSpeed = Math.hypot(nextVelocityX, nextVelocityZ);
 
@@ -561,6 +590,25 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
       },
       true,
     );
+  }
+
+  const finalLimitedHorizontalVelocity = limitHorizontalSpeedBySpinEnergy(
+    body,
+    proxyGeometry,
+    { bladeContactStrength: surfaceContact.bladeContactStrength },
+    nextVelocityX,
+    nextVelocityZ,
+    deltaSeconds,
+    contactStrength > 0 ? 2.2 : 3.4,
+  );
+
+  if (
+    Math.abs(finalLimitedHorizontalVelocity.x - nextVelocityX) > 0.000001
+    || Math.abs(finalLimitedHorizontalVelocity.z - nextVelocityZ) > 0.000001
+  ) {
+    nextVelocityX = finalLimitedHorizontalVelocity.x;
+    nextVelocityZ = finalLimitedHorizontalVelocity.z;
+    shouldUpdateVelocity = true;
   }
 
   if (shouldUpdateTranslation) {
@@ -668,13 +716,63 @@ export function calculateTopTelemetry(body: RapierRigidBody | null, stopReason: 
   return {
     spinRpm: Math.max(0, radiansPerSecondToRpm(spinRadiansPerSecond)),
     tiltDegrees: radiansToDegrees(bodyUp.angleTo(WORLD_UP)),
-    speed: Math.hypot(linearVelocity.x, linearVelocity.y, linearVelocity.z),
+    speed: Math.hypot(linearVelocity.x, linearVelocity.z),
     stopReason,
     radialDistance: Math.hypot(translation.x, translation.z),
     position: {
       x: translation.x,
       z: translation.z,
     },
+  };
+}
+
+function limitHorizontalSpeedBySpinEnergy(
+  body: RapierRigidBody,
+  proxyGeometry: ProxyGeometry,
+  surfaceContact: {
+    bladeContactStrength: number;
+  },
+  velocityX: number,
+  velocityZ: number,
+  deltaSeconds: number,
+  dampingMultiplier = 1,
+): { x: number; z: number } {
+  const horizontalSpeed = Math.hypot(velocityX, velocityZ);
+
+  if (horizontalSpeed <= 0.000001) {
+    return { x: velocityX, z: velocityZ };
+  }
+
+  const rotation = body.rotation();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocity = body.angvel();
+  const spinRadiansPerSecond = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z).dot(bodyUp);
+  const spinRpm = Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
+  const spinRatio = clamp(spinRpm / HIGH_RPM_STABILITY_RPM, 0, 1);
+  const tiltDrive = clamp(radiansToDegrees(bodyUp.angleTo(WORLD_UP)) / 22, 0, 1);
+  const contactDrive = clamp(surfaceContact.bladeContactStrength, 0, 1);
+  const tipDrive = clamp(proxyGeometry.tipRadiusWorld / Math.max(proxyGeometry.radiusWorld * 0.14, 0.001), 0.35, 1.25);
+  const sustainedSpeedLimit = clamp(
+    0.04 + Math.sqrt(spinRatio) * (0.07 + tiltDrive * 0.08 + contactDrive * 0.015) * tipDrive,
+    0.05,
+    MAX_HORIZONTAL_SPEED,
+  );
+
+  if (horizontalSpeed <= sustainedSpeedLimit) {
+    return { x: velocityX, z: velocityZ };
+  }
+
+  const excessDamping = Math.exp(-(2.3 + proxyGeometry.tipFriction * 0.7 + contactDrive * 2.6) * dampingMultiplier * deltaSeconds);
+  const transientAllowance = 0.025 + contactDrive * 0.035;
+  const dampedSpeed = Math.min(
+    sustainedSpeedLimit + transientAllowance,
+    sustainedSpeedLimit + (horizontalSpeed - sustainedSpeedLimit) * excessDamping,
+  );
+  const speedScale = dampedSpeed / horizontalSpeed;
+
+  return {
+    x: velocityX * speedScale,
+    z: velocityZ * speedScale,
   };
 }
 
