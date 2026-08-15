@@ -1,0 +1,35 @@
+{
+  "schema": "beyblade-simulator.unity-poc-evaluation.v1",
+  "createdAt": "2026-08-11T00:00:00.0000000Z",
+  "trialSeconds": 14,
+  "mode": "editor-headless-physics-simulate",
+  "physicsSettings": {
+    "fixedDeltaTime": 0.0083,
+    "defaultSolverIterations": 16,
+    "defaultSolverVelocityIterations": 8,
+    "defaultMaxDepenetrationVelocity": 2.4
+  },
+  "trials": [
+    {
+      "name": "raw-physx",
+      "bowlAssist": false,
+      "gyroAssist": false,
+      "durationSeconds": 1.2,
+      "sampleCount": 80,
+      "maxHeightAboveSurface": 1.8,
+      "maxRadius": 0.2,
+      "maxTiltDegrees": 89.5,
+      "minTopDistance": 0,
+      "totalCollisions": 0,
+      "rimSampleRatio": 0,
+      "centerContactSampleRatio": 1,
+      "bounceRiskSampleRatio": 0.7,
+      "endState": {
+        "leftRpm": 0,
+        "rightRpm": 0,
+        "leftSpeed": 0,
+        "rightSpeed": 0
+      }
+    }
+  ]
+}

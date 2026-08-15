@@ -17,6 +17,7 @@ The simulator currently supports:
 - Single-top Rapier simulation with launch, pause, step, reset, telemetry, damping, wobble, stop detection, and replay traces.
 - Two-bey battle simulation with left/right design slots, simplified proxy collisions, ring-out and stop detection, winner/draw results, and local result history.
 - Results analysis with charts, replay controls, contact event markers, and profile JSON export/import.
+- A Unity PhysX proof-of-concept under `unity-poc/` for comparing native rigid-body behavior, procedural bowl stadium contact, hit sounds, telemetry CSV export, and optional visual-only STL shells.
 
 ## Running Locally
 
@@ -60,6 +61,8 @@ http://127.0.0.1:5173/
 6. Select two saved designs in the Battle tab for a head-to-head run.
 7. Review charts, replay traces, and battle history in Results.
 
+For the Unity comparison prototype, open `unity-poc/` in Unity 2022.3 LTS or newer and follow `docs/unity-proof-of-concept.md`.
+
 ## Physics Model
 
 The imported STL/OBJ mesh is visual-only. This keeps arbitrary CAD geometry from destabilizing the physics engine.
@@ -97,6 +100,8 @@ Reference dimension notes live in:
 
 ```text
 docs/reference-dimensions-and-calibration.md
+docs/physics-realism-review.md
+docs/unity-proof-of-concept.md
 ```
 
 ## Storage

@@ -9,9 +9,10 @@ import {
   getPocketEntryRadius,
   isAngleInsidePocket,
   isPositionInPocket,
+  type StadiumPreset,
 } from './stadiumConfig';
 import {
-  getStadiumSurfaceGradientAt,
+  getStadiumBowlGradientAt,
   getStadiumSurfaceYAt,
   getStadiumSurfaceYByProgress,
 } from './stadiumSurface';
@@ -60,9 +61,9 @@ export type TopRigidBodyOptions = {
 };
 
 export const ARENA_SURFACE_Y = STADIUM_SURFACE_Y;
-export const FIXED_TIMESTEP_SECONDS = 1 / 90;
+export const FIXED_TIMESTEP_SECONDS = 1 / 120;
 export const MAX_ACCUMULATED_SECONDS = 1 / 4;
-export const MAX_STEPS_PER_FRAME = 18;
+export const MAX_STEPS_PER_FRAME = 24;
 export const STOP_RPM_THRESHOLD = 120;
 export const STOP_TILT_DEGREES = 75;
 export const STOP_DURATION_SECONDS = 1.25;
@@ -74,15 +75,32 @@ const MAX_UPWARD_SPEED = 0.28;
 const MAX_SPIN_RPM = 12500;
 const MAX_TUMBLE_RADIANS_PER_SECOND = 12;
 const MAX_VISUAL_SPIN_RPM = 480;
-const BOWL_SLOPE_ACCELERATION_SCALE = 0.08;
+const BOWL_SLOPE_ACCELERATION_SCALE = 0.16;
+const CENTER_CHANNEL_LOW_SPIN_RPM = 4600;
+const CENTER_CHANNEL_MIN_RADIUS = 0.42;
+const CENTER_CHANNEL_ACCELERATION = 0.82;
+const CENTER_CHANNEL_OUTWARD_DAMPING = 2.85;
+const CENTER_CHANNEL_ORBIT_DAMPING = 0.92;
+const CENTER_CHANNEL_POSITION_SETTLE = 0.34;
+const RIM_BANK_RETURN_RATE = 1.9;
+const RIM_BANK_ORBIT_DAMPING = 1.85;
 const CONTACT_CLEARANCE = 0.006;
 const LAUNCH_RPM_VARIATION_RATIO = 0.035;
 const LAUNCH_ANGLE_VARIATION_DEGREES = 0.65;
 const LAUNCH_POSITION_VARIATION_WORLD = 0.08;
 const LAUNCH_VELOCITY_VARIATION_WORLD_PER_SECOND = 0.14;
 const HIGH_RPM_STABILITY_RPM = 7000;
+const XTREME_RAIL_ACCELERATION = 1.15;
+const XTREME_RAIL_SPIN_DRAIN = 0.035;
 const WORLD_UP = new Vector3(0, 1, 0);
 const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
+const lowEnergyRadiusByBody = new WeakMap<RapierRigidBody, number>();
+
+export function configurePhysicsWorld(world: RapierWorld): void {
+  world.timestep = FIXED_TIMESTEP_SECONDS;
+  world.numSolverIterations = Math.max(world.numSolverIterations, 8);
+  world.maxCcdSubsteps = Math.max(world.maxCcdSubsteps, 4);
+}
 
 export function createArenaColliders(rapier: RapierRuntime, world: RapierWorld): void {
   createTornadoRidgeColliders(rapier, world);
@@ -188,6 +206,8 @@ export function createTopRigidBody(
     .setAngvel(withLaunchVelocity ? getLaunchAngularVelocity(launchSettings, launchRotation, options.spinDirection ?? 1) : { x: 0, y: 0, z: 0 })
     .setLinearDamping(Math.min(1.2, 0.025 + profile.airDragCoefficient * 0.35))
     .setAngularDamping(Math.min(1, 0.006 + profile.spinDampingCoefficient * 0.08))
+    .setAdditionalSolverIterations(4)
+    .setCcdEnabled(true)
     .setAdditionalMassProperties(
       proxyGeometry.massKg,
       {
@@ -455,38 +475,63 @@ export function applyArenaContainment(body: RapierRigidBody, proxyGeometry: Prox
   const inPocket = isPositionInPocket(translation.x, translation.z);
   const stadium = getActiveStadiumPreset();
   const maxCenterDistance = Math.max(0.4, stadium.wallRadiusWorld - Math.max(proxyGeometry.radiusWorld * 0.45, 0.4));
+  const softBankDistance = Math.max(0.6, stadium.wallRadiusWorld - Math.max(proxyGeometry.radiusWorld * 0.95, 0.74));
 
   if (inPocket && radialDistance > maxCenterDistance) {
     return;
   }
 
-  if (radialDistance <= maxCenterDistance || radialDistance === 0) {
+  if (radialDistance <= softBankDistance || radialDistance === 0) {
     return;
   }
 
   const normalX = translation.x / radialDistance;
   const normalZ = translation.z / radialDistance;
+  const rimWidth = Math.max(maxCenterDistance - softBankDistance, 0.001);
+  const rimPressure = clamp((radialDistance - softBankDistance) / rimWidth, 0, 1);
+  const linearVelocity = body.linvel();
+  const speed = Math.hypot(linearVelocity.x, linearVelocity.z);
+  const spinRpm = getBodySpinRpm(body);
+  const lowSpinReturn = clamp((6200 - spinRpm) / 6200, 0, 1);
+  const returnRate = RIM_BANK_RETURN_RATE * (0.34 + rimPressure * 0.66) * (0.65 + lowSpinReturn * 0.55);
+  const hardWallReentryRadius = softBankDistance + rimWidth * 0.18;
+  const slowBankReentryRadius = softBankDistance + rimWidth * 0.24;
+  const gradualReturnRadius = Math.min(radialDistance, maxCenterDistance)
+    - returnRate * FIXED_TIMESTEP_SECONDS * (0.55 + Math.min(speed, 0.9));
+  const bankedReturnRadius = speed < 0.45 && lowSpinReturn > 0.16 && rimPressure > 0.55
+    ? Math.min(gradualReturnRadius, slowBankReentryRadius)
+    : gradualReturnRadius;
+  const returnedRadius = Math.max(
+    softBankDistance,
+    radialDistance >= maxCenterDistance - 0.035
+      ? Math.min(hardWallReentryRadius, bankedReturnRadius)
+      : bankedReturnRadius,
+  );
+
   body.setTranslation(
     {
-      x: normalX * maxCenterDistance,
+      x: normalX * returnedRadius,
       y: translation.y,
-      z: normalZ * maxCenterDistance,
+      z: normalZ * returnedRadius,
     },
     true,
   );
 
-  const linearVelocity = body.linvel();
   const outwardSpeed = linearVelocity.x * normalX + linearVelocity.z * normalZ;
-
-  if (outwardSpeed <= 0) {
-    return;
-  }
+  const tangentialVelocityX = linearVelocity.x - outwardSpeed * normalX;
+  const tangentialVelocityZ = linearVelocity.z - outwardSpeed * normalZ;
+  const rimOrbitDamping = Math.exp(
+    -RIM_BANK_ORBIT_DAMPING * (0.25 + rimPressure * 0.75) * (0.55 + lowSpinReturn * 0.45) * FIXED_TIMESTEP_SECONDS,
+  );
+  const nextRadialSpeed = outwardSpeed > 0
+    ? -outwardSpeed * (0.16 + rimPressure * 0.18)
+    : outwardSpeed;
 
   body.setLinvel(
     {
-      x: linearVelocity.x - outwardSpeed * normalX * 1.35,
+      x: tangentialVelocityX * rimOrbitDamping + nextRadialSpeed * normalX,
       y: linearVelocity.y,
-      z: linearVelocity.z - outwardSpeed * normalZ * 1.35,
+      z: tangentialVelocityZ * rimOrbitDamping + nextRadialSpeed * normalZ,
     },
     true,
   );
@@ -539,25 +584,92 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
     surfaceContact.maxPenetration > 0 ? 0.9 : 0,
     Math.min((groundBodyY + contactWindow - nextY) / contactWindow, 1),
   );
+  const nearSurfaceGripStrength = (
+    contactStrength <= 0
+    && nextY <= groundBodyY + contactWindow * 1.85
+    && Math.hypot(nextVelocityX, nextVelocityZ) < 0.42
+  )
+    ? 0.42
+    : 0;
+  const bowlGripStrength = Math.max(contactStrength, nearSurfaceGripStrength);
 
-  if (contactStrength > 0) {
-    const gradient = getStadiumSurfaceGradientAt(surfaceContact.supportX, surfaceContact.supportZ, stadium);
-    const accelerationScale = 9.81 * BOWL_SLOPE_ACCELERATION_SCALE * contactStrength;
+  if (bowlGripStrength > 0) {
+    const gradient = getStadiumBowlGradientAt(surfaceContact.supportX, surfaceContact.supportZ, stadium);
+    const accelerationScale = 9.81 * BOWL_SLOPE_ACCELERATION_SCALE * bowlGripStrength;
+    const railDriveStrength = getXtremeRailDriveStrength(body, proxyGeometry, stadium, surfaceContact.supportX, surfaceContact.supportZ);
     const floorDrag = Math.exp(
       -(
         0.34
         + stadium.floorFriction * 18
         + proxyGeometry.tipFriction * 0.42
         + surfaceContact.bladeContactStrength * 1.4
-      ) * contactStrength * deltaSeconds,
+      ) * bowlGripStrength * deltaSeconds,
     );
 
     nextVelocityX = (nextVelocityX - gradient.x * accelerationScale * deltaSeconds) * floorDrag;
     nextVelocityZ = (nextVelocityZ - gradient.z * accelerationScale * deltaSeconds) * floorDrag;
+    const railDrivenVelocity = applyXtremeRailDrive(
+      body,
+      proxyGeometry,
+      surfaceContact.supportX,
+      surfaceContact.supportZ,
+      railDriveStrength,
+      nextVelocityX,
+      nextVelocityZ,
+      deltaSeconds,
+    );
+
+    nextVelocityX = railDrivenVelocity.x;
+    nextVelocityZ = railDrivenVelocity.z;
+
+    const channeledVelocity = applyBowlCentering(
+      body,
+      proxyGeometry,
+      stadium,
+      surfaceContact.supportX,
+      surfaceContact.supportZ,
+      railDriveStrength,
+      bowlGripStrength,
+      nextVelocityX,
+      nextVelocityZ,
+      deltaSeconds,
+    );
+
+    nextVelocityX = channeledVelocity.x;
+    nextVelocityZ = channeledVelocity.z;
+
+    if (channeledVelocity.settleDistance > 0) {
+      const currentRadius = Math.hypot(translation.x, translation.z);
+
+      if (currentRadius > CENTER_CHANNEL_MIN_RADIUS) {
+        const positionScale = Math.max((currentRadius - channeledVelocity.settleDistance) / currentRadius, 0);
+        translation.x *= positionScale;
+        translation.z *= positionScale;
+        shouldUpdateTranslation = true;
+      }
+    }
+
+    if (
+      limitLowEnergyOutwardDrift(
+        body,
+        translation,
+        railDriveStrength,
+        bowlGripStrength,
+        nextVelocityX,
+        nextVelocityZ,
+        deltaSeconds,
+      )
+    ) {
+      shouldUpdateTranslation = true;
+    }
+
     const limitedHorizontalVelocity = limitHorizontalSpeedBySpinEnergy(
       body,
       proxyGeometry,
-      surfaceContact,
+      {
+        bladeContactStrength: surfaceContact.bladeContactStrength,
+        railDriveStrength,
+      },
       nextVelocityX,
       nextVelocityZ,
       deltaSeconds,
@@ -595,7 +707,10 @@ export function stabilizeTopGroundContact(body: RapierRigidBody, proxyGeometry: 
   const finalLimitedHorizontalVelocity = limitHorizontalSpeedBySpinEnergy(
     body,
     proxyGeometry,
-    { bladeContactStrength: surfaceContact.bladeContactStrength },
+    {
+      bladeContactStrength: surfaceContact.bladeContactStrength,
+      railDriveStrength: getXtremeRailDriveStrength(body, proxyGeometry, stadium, surfaceContact.supportX, surfaceContact.supportZ),
+    },
     nextVelocityX,
     nextVelocityZ,
     deltaSeconds,
@@ -731,6 +846,7 @@ function limitHorizontalSpeedBySpinEnergy(
   proxyGeometry: ProxyGeometry,
   surfaceContact: {
     bladeContactStrength: number;
+    railDriveStrength?: number;
   },
   velocityX: number,
   velocityZ: number,
@@ -751,9 +867,10 @@ function limitHorizontalSpeedBySpinEnergy(
   const spinRatio = clamp(spinRpm / HIGH_RPM_STABILITY_RPM, 0, 1);
   const tiltDrive = clamp(radiansToDegrees(bodyUp.angleTo(WORLD_UP)) / 22, 0, 1);
   const contactDrive = clamp(surfaceContact.bladeContactStrength, 0, 1);
+  const railDrive = clamp(surfaceContact.railDriveStrength ?? 0, 0, 1);
   const tipDrive = clamp(proxyGeometry.tipRadiusWorld / Math.max(proxyGeometry.radiusWorld * 0.14, 0.001), 0.35, 1.25);
   const sustainedSpeedLimit = clamp(
-    0.04 + Math.sqrt(spinRatio) * (0.07 + tiltDrive * 0.08 + contactDrive * 0.015) * tipDrive,
+    0.04 + Math.sqrt(spinRatio) * (0.07 + tiltDrive * 0.08 + contactDrive * 0.015 + railDrive * 1.05) * tipDrive,
     0.05,
     MAX_HORIZONTAL_SPEED,
   );
@@ -763,7 +880,7 @@ function limitHorizontalSpeedBySpinEnergy(
   }
 
   const excessDamping = Math.exp(-(2.3 + proxyGeometry.tipFriction * 0.7 + contactDrive * 2.6) * dampingMultiplier * deltaSeconds);
-  const transientAllowance = 0.025 + contactDrive * 0.035;
+  const transientAllowance = 0.025 + contactDrive * 0.035 + railDrive * 0.42;
   const dampedSpeed = Math.min(
     sustainedSpeedLimit + transientAllowance,
     sustainedSpeedLimit + (horizontalSpeed - sustainedSpeedLimit) * excessDamping,
@@ -774,6 +891,223 @@ function limitHorizontalSpeedBySpinEnergy(
     x: velocityX * speedScale,
     z: velocityZ * speedScale,
   };
+}
+
+function getXtremeRailDriveStrength(
+  body: RapierRigidBody,
+  proxyGeometry: ProxyGeometry,
+  stadium: StadiumPreset,
+  contactX: number,
+  contactZ: number,
+): number {
+  if (stadium.id !== 'xtreme-bx10') {
+    return 0;
+  }
+
+  const radialDistance = Math.hypot(contactX, contactZ);
+
+  if (radialDistance <= 0.000001) {
+    return 0;
+  }
+
+  const railWidth = Math.max(proxyGeometry.radiusWorld * 0.5, 0.22);
+  const railProximity = clamp(1 - Math.abs(radialDistance - stadium.tornadoRidgeRadiusWorld) / railWidth, 0, 1);
+
+  if (railProximity <= 0) {
+    return 0;
+  }
+
+  const rotation = body.rotation();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocity = body.angvel();
+  const spinRadiansPerSecond = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z).dot(bodyUp);
+  const spinRpm = Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
+  const spinDrive = clamp((spinRpm - 2200) / 6200, 0, 1);
+  const tipEngagement = clamp((proxyGeometry.tipFriction - 0.18) / 0.42, 0, 1);
+
+  return railProximity * spinDrive * tipEngagement;
+}
+
+function applyXtremeRailDrive(
+  body: RapierRigidBody,
+  proxyGeometry: ProxyGeometry,
+  contactX: number,
+  contactZ: number,
+  driveStrength: number,
+  velocityX: number,
+  velocityZ: number,
+  deltaSeconds: number,
+): { x: number; z: number } {
+  if (driveStrength <= 0) {
+    return { x: velocityX, z: velocityZ };
+  }
+
+  const radialDistance = Math.hypot(contactX, contactZ);
+
+  if (radialDistance <= 0.000001) {
+    return { x: velocityX, z: velocityZ };
+  }
+
+  const rotation = body.rotation();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocity = body.angvel();
+  const angularVelocityVector = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z);
+  const spinRadiansPerSecond = angularVelocityVector.dot(bodyUp);
+  const spinDirection = Math.sign(spinRadiansPerSecond) || 1;
+  const tangentX = (-contactZ / radialDistance) * spinDirection;
+  const tangentZ = (contactX / radialDistance) * spinDirection;
+  const tangentSpeed = velocityX * tangentX + velocityZ * tangentZ;
+  const spinRpm = Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
+  const spinRatio = clamp(spinRpm / HIGH_RPM_STABILITY_RPM, 0, 1);
+  const railSpeedLimit = 0.42 + spinRatio * (0.9 + proxyGeometry.attackBias * 0.32);
+
+  if (tangentSpeed >= railSpeedLimit) {
+    return { x: velocityX, z: velocityZ };
+  }
+
+  const acceleration = XTREME_RAIL_ACCELERATION * driveStrength * spinRatio;
+  const speedBoost = Math.min((railSpeedLimit - tangentSpeed) * 0.55, acceleration * deltaSeconds);
+  const spinDrain = Math.min(Math.abs(spinRadiansPerSecond) * XTREME_RAIL_SPIN_DRAIN * driveStrength * deltaSeconds, Math.abs(spinRadiansPerSecond) * 0.08);
+  const drainedSpinVector = bodyUp.multiplyScalar(spinDrain * spinDirection);
+
+  body.setAngvel(
+    {
+      x: angularVelocity.x - drainedSpinVector.x,
+      y: angularVelocity.y - drainedSpinVector.y,
+      z: angularVelocity.z - drainedSpinVector.z,
+    },
+    true,
+  );
+
+  return {
+    x: velocityX + tangentX * speedBoost,
+    z: velocityZ + tangentZ * speedBoost,
+  };
+}
+
+function applyBowlCentering(
+  body: RapierRigidBody,
+  proxyGeometry: ProxyGeometry,
+  stadium: StadiumPreset,
+  contactX: number,
+  contactZ: number,
+  railDriveStrength: number,
+  contactStrength: number,
+  velocityX: number,
+  velocityZ: number,
+  deltaSeconds: number,
+): { x: number; z: number; settleDistance: number } {
+  const radialDistance = Math.hypot(contactX, contactZ);
+
+  if (radialDistance <= CENTER_CHANNEL_MIN_RADIUS || contactStrength <= 0) {
+    return { x: velocityX, z: velocityZ, settleDistance: 0 };
+  }
+
+  const rotation = body.rotation();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocity = body.angvel();
+  const spinRadiansPerSecond = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z).dot(bodyUp);
+  const spinRpm = Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
+  const lowSpinSettling = clamp((CENTER_CHANNEL_LOW_SPIN_RPM - spinRpm) / CENTER_CHANNEL_LOW_SPIN_RPM, 0, 1);
+  const railRelief = 1 - clamp(railDriveStrength, 0, 1) * 0.82;
+  const radialProgress = clamp(radialDistance / stadium.playRadiusWorld, 0, 1.1);
+  const normalX = contactX / radialDistance;
+  const normalZ = contactZ / radialDistance;
+  const radialSpeed = velocityX * normalX + velocityZ * normalZ;
+  const tangentialVelocityX = velocityX - radialSpeed * normalX;
+  const tangentialVelocityZ = velocityZ - radialSpeed * normalZ;
+  const outwardDamping = 1 - Math.exp(
+    -CENTER_CHANNEL_OUTWARD_DAMPING
+      * (0.18 + lowSpinSettling * 0.82)
+      * radialProgress
+      * contactStrength
+      * railRelief
+      * deltaSeconds,
+  );
+  const orbitDamping = Math.exp(
+    -CENTER_CHANNEL_ORBIT_DAMPING
+      * lowSpinSettling
+      * radialProgress
+      * contactStrength
+      * railRelief
+      * deltaSeconds,
+  );
+  const inwardAcceleration = CENTER_CHANNEL_ACCELERATION
+    * radialProgress
+    * (0.24 + lowSpinSettling * 0.76)
+    * contactStrength
+    * railRelief;
+  const settleDistance = CENTER_CHANNEL_POSITION_SETTLE
+    * lowSpinSettling
+    * radialProgress
+    * contactStrength
+    * railRelief
+    * deltaSeconds;
+  const nextRadialSpeed = radialSpeed > 0
+    ? radialSpeed * (1 - outwardDamping) - inwardAcceleration * deltaSeconds
+    : radialSpeed - inwardAcceleration * deltaSeconds * 0.42;
+
+  return {
+    x: tangentialVelocityX * orbitDamping + normalX * nextRadialSpeed,
+    z: tangentialVelocityZ * orbitDamping + normalZ * nextRadialSpeed,
+    settleDistance,
+  };
+}
+
+function getBodySpinRpm(body: RapierRigidBody): number {
+  const rotation = body.rotation();
+  const bodyUp = WORLD_UP.clone().applyQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w)).normalize();
+  const angularVelocity = body.angvel();
+  const spinRadiansPerSecond = new Vector3(angularVelocity.x, angularVelocity.y, angularVelocity.z).dot(bodyUp);
+
+  return Math.abs(radiansPerSecondToRpm(spinRadiansPerSecond));
+}
+
+function limitLowEnergyOutwardDrift(
+  body: RapierRigidBody,
+  translation: { x: number; y: number; z: number },
+  railDriveStrength: number,
+  contactStrength: number,
+  velocityX: number,
+  velocityZ: number,
+  deltaSeconds: number,
+): boolean {
+  const currentRadius = Math.hypot(translation.x, translation.z);
+
+  if (currentRadius <= CENTER_CHANNEL_MIN_RADIUS || contactStrength <= 0) {
+    lowEnergyRadiusByBody.set(body, currentRadius);
+    return false;
+  }
+
+  const speed = Math.hypot(velocityX, velocityZ);
+  const spinRpm = getBodySpinRpm(body);
+  const lowSpinSettling = clamp((CENTER_CHANNEL_LOW_SPIN_RPM - spinRpm) / CENTER_CHANNEL_LOW_SPIN_RPM, 0, 1);
+  const previousRadius = lowEnergyRadiusByBody.get(body);
+
+  if (
+    previousRadius === undefined
+    || lowSpinSettling < 0.34
+    || railDriveStrength > 0.12
+    || speed > 0.46
+  ) {
+    lowEnergyRadiusByBody.set(body, currentRadius);
+    return false;
+  }
+
+  const allowedOutwardDrift = (0.035 + speed * 0.045) * (1 - lowSpinSettling * 0.72) * deltaSeconds;
+  const maxAllowedRadius = Math.max(previousRadius + allowedOutwardDrift, CENTER_CHANNEL_MIN_RADIUS);
+
+  if (currentRadius <= maxAllowedRadius) {
+    lowEnergyRadiusByBody.set(body, currentRadius);
+    return false;
+  }
+
+  const scale = maxAllowedRadius / currentRadius;
+  translation.x *= scale;
+  translation.z *= scale;
+  lowEnergyRadiusByBody.set(body, maxAllowedRadius);
+
+  return true;
 }
 
 export function getStopCandidateReason(

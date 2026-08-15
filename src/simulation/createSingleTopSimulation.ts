@@ -11,6 +11,7 @@ import {
   applyProfileDamping,
   applyWobbleTorque,
   calculateTopTelemetry,
+  configurePhysicsWorld,
   createArenaColliders,
   createProxyGeometry,
   createTopRigidBody,
@@ -68,7 +69,7 @@ export async function createSingleTopSimulation(simulatorScene: SimulatorScene):
       ? createVariedLaunchSettings(getLaunchSettingsFromProfile(currentProfile), proxyGeometry)
       : getLaunchSettingsFromProfile(currentProfile);
     world = new rapier.World({ x: 0, y: -9.81, z: 0 });
-    world.timestep = FIXED_TIMESTEP_SECONDS;
+    configurePhysicsWorld(world);
     createArenaColliders(rapier as RapierRuntime, world);
     topBody = createTopRigidBody(
       rapier as RapierRuntime,
